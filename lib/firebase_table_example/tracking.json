@@ -1,0 +1,21 @@
+[
+  {
+    "sessionId": "1753279907271",
+    "userId": "user_abc123",
+    "date": "2025-07-23T22:11:47.271144",
+    "source": "tracking",
+    "images": [
+      {
+        "imagePath": "gs://your-bucket/tracking_images/1000002546.jpg",
+        "results": [
+          { "disease": "healthy", "confidence": 0.8916 },
+          { "disease": "healthy", "confidence": 0.8869 }
+        ]
+      },
+      {
+        "imagePath": "gs://your-bucket/tracking_images/1000000695.jpg",
+        "results": [{ "disease": "backterial_blackspot", "confidence": 0.8747 }]
+      }
+    ]
+  }
+]

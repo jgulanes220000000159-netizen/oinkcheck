@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "589848547166",
+    "firebase_url": "https://oinkcheck-d07df-default-rtdb.firebaseio.com",
+    "project_id": "oinkcheck-d07df",
+    "storage_bucket": "oinkcheck-d07df.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:589848547166:android:a3c02aaead8bfe26b2c9cf",
+        "android_client_info": {
+          "package_name": "com.example.capstone"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDItyYxyCnqmUZQ5dD-NO2bVhoUNFSBQVE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:589848547166:android:678df6ebf076ebffb2c9cf",
+        "android_client_info": {
+          "package_name": "com.example.oinkcheck"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDItyYxyCnqmUZQ5dD-NO2bVhoUNFSBQVE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

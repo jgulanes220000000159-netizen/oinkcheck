@@ -1,0 +1,90 @@
+name: capstone
+description: "A new Flutter project."
+publish_to: "none" # Keep it as none for private apps
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.7.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_dotenv: ^5.1.0
+  camera: ^0.10.5+5
+  tflite_flutter: ^0.10.1
+  path_provider: ^2.1.1
+  image_picker: ^0.8.5+3 # Optional: if you want to pick images from the gallery
+  image: ^3.0.1
+  cupertino_icons: ^1.0.8 # For iOS style icons
+  fl_chart: ^0.66.2
+  uuid: ^4.2.1
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  firebase_core: ^2.25.4
+  firebase_auth: ^4.17.4
+  cloud_firestore: ^4.15.4
+  firebase_storage: ^11.6.5
+  mime: ^1.0.5
+  supabase_flutter: ^2.5.8
+  cached_network_image: ^3.3.1
+  mailer: ^6.0.1
+  easy_localization: ^3.0.1
+  firebase_messaging: ^14.7.4
+  google_sign_in: ^6.2.1
+  connectivity_plus: ^5.0.2
+  month_year_picker: ^0.4.0
+  lottie: ^3.0.0
+  http: ^1.2.0
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.0
+  flutter_local_notifications:
+    git:
+      url: https://github.com/SherwenCabanilla/flutter_local_notifications.git
+      path: flutter_local_notifications
+      ref: master
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0 # For good coding practices
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.8
+  flutter_launcher_icons: ^0.11.0
+
+flutter_icons:
+  android: true
+  ios: false
+  image_path: assets/applogo.png
+  adaptive_icon_foreground: assets/applogo.png
+  adaptive_icon_background: "#FFFFFF"
+  # optional for iOS:
+  # image_path_ios: assets/applogo.png
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/labelsv2.txt
+    - assets/v40.tflite
+    - assets/logo.png
+    - assets/applogo.png
+    - assets/applogo_header.png
+    - assets/google-icon-1.png
+    - assets/replace_disease/
+    - assets/lang/en.json
+    - assets/lang/tl.json
+    - assets/lang/bs.json
+    - assets/animation.gif
+    - assets/ph_locations.json
+    - .env
+    # Add any other image or asset files here
+    # - assets/images/your_image.jpg
+
+  # Optional: If you plan to add custom fonts
+  # fonts:
+  #   - family: CustomFont
+  #     fonts:
+  #       - asset: fonts/CustomFont-Regular.ttf
+  #       - asset: fonts/CustomFont-Bold.ttf
+  #         weight: 700
