@@ -1,5 +1,8 @@
-backterial_blackspot
-dieback
 healthy
-powdery_mildew
-tip_burn
+infected_bacterial_erysipelas
+infected_bacterial_greasy
+infected_environmental_sunburn
+infected_fungal_ringworm
+infected_parasitic_mange
+infected_viral_foot_and_mouth
+swine_pox

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:easy_localization/easy_localization.dart';
 
 class AboutAppPage extends StatelessWidget {
   const AboutAppPage({Key? key}) : super(key: key);
@@ -11,9 +10,9 @@ class AboutAppPage extends StatelessWidget {
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: Text(
-          tr('about_app'),
-          style: const TextStyle(
+        title: const Text(
+          'About OinkCheck',
+          style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.bold,
           ),
@@ -39,97 +38,163 @@ class AboutAppPage extends StatelessWidget {
                           shape: BoxShape.circle,
                           color: Colors.white,
                         ),
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.all(16),
                         child: Image.asset(
                           'assets/applogo_header.png',
-                          width: 84,
-                          height: 84,
+                          width: 100,
+                          height: 100,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            'Mango',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            'Sense',
-                            style: const TextStyle(
-                              color: Colors.yellow,
-                              fontSize: 32,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 20),
+                      const Text(
+                        'OINKCHECK',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 36,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 2,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Pig Disease Detection & Surveillance',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.9),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
                       ),
                     ],
                   ),
                 ),
                 const SizedBox(height: 40),
-                // App Description
-                Text(
-                  tr('about_mangosense'),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
+                
+                // Main Description
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 1,
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'About the System',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'OINKCHECK is a mobile-optimized application that utilizes deep learning and Convolutional Neural Networks (CNN) for the rapid, on-site detection and surveillance of prevalent pig skin diseases.',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.95),
+                          fontSize: 15,
+                          height: 1.6,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'The system is designed to bridge the diagnostic gap for visually identifiable porcine dermatopathies in low-resource farming environments, particularly for backyard farmers in Davao del Norte.',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.95),
+                          fontSize: 15,
+                          height: 1.6,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'The application allows farmers to capture 1–5 images of a pig\'s skin to receive immediate, preliminary identification of diseases and localized treatment recommendations.',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.95),
+                          fontSize: 15,
+                          height: 1.6,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  tr('about_mangosense_desc'),
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
-                    fontSize: 16,
-                    height: 1.5,
-                  ),
-                ),
+                
                 const SizedBox(height: 32),
-                // Features
-                Text(
-                  tr('key_features'),
-                  style: const TextStyle(
+                
+                // Key Features
+                const Text(
+                  'Key Features',
+                  style: TextStyle(
                     color: Colors.white,
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
                 const SizedBox(height: 16),
+                
                 _buildFeatureItem(
                   icon: Icons.camera_alt,
-                  title: tr('disease_detection'),
-                  description: tr('disease_detection_desc'),
+                  title: 'AI-Powered Detection',
+                  description: 'Advanced CNN technology for accurate pig disease identification from skin images.',
+                ),
+                _buildFeatureItem(
+                  icon: Icons.verified_user,
+                  title: 'Expert Validation',
+                  description: 'Professional veterinary experts review and validate disease diagnoses.',
                 ),
                 _buildFeatureItem(
                   icon: Icons.medical_services,
-                  title: tr('expert_analysis'),
-                  description: tr('expert_analysis_desc'),
+                  title: 'Treatment Recommendations',
+                  description: 'Localized treatment plans tailored for backyard farming conditions.',
                 ),
                 _buildFeatureItem(
-                  icon: Icons.history,
-                  title: tr('scan_history'),
-                  description: tr('scan_history_desc'),
+                  icon: Icons.map,
+                  title: 'Disease Surveillance',
+                  description: 'Track disease outbreaks and hotspots in your region.',
                 ),
                 _buildFeatureItem(
-                  icon: Icons.notifications,
-                  title: tr('real_time_updates'),
-                  description: tr('real_time_updates_desc'),
+                  icon: Icons.speed,
+                  title: 'Rapid Results',
+                  description: 'Get preliminary disease identification in seconds.',
                 ),
-                const SizedBox(height: 32),
+                
+                const SizedBox(height: 40),
+                
                 // Version Info
                 Center(
-                  child: Text(
-                    tr('version 1.0.0'),
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 14,
-                    ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'Version 1.0.0',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.7),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '© 2025 OinkCheck',
+                        style: TextStyle(
+                          color: Colors.white.withOpacity(0.6),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 const SizedBox(height: 24),
@@ -152,12 +217,12 @@ class AboutAppPage extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, color: Colors.white, size: 24),
+            child: Icon(icon, color: Colors.white, size: 26),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -168,17 +233,17 @@ class AboutAppPage extends StatelessWidget {
                   title,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 18,
+                    fontSize: 17,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 6),
                 Text(
                   description,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.8),
+                    color: Colors.white.withOpacity(0.85),
                     fontSize: 14,
-                    height: 1.4,
+                    height: 1.5,
                   ),
                 ),
               ],
@@ -188,4 +253,5 @@ class AboutAppPage extends StatelessWidget {
       ),
     );
   }
+
 }

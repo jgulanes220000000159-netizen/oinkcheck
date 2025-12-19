@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../shared/treatments_repository.dart';
+import '../shared/disease_image.dart';
 
 class DiseasesPage extends StatefulWidget {
   const DiseasesPage({Key? key}) : super(key: key);
@@ -8,6 +10,18 @@ class DiseasesPage extends StatefulWidget {
 }
 
 class _DiseasesPageState extends State<DiseasesPage> {
+  final TreatmentsRepository _repo = TreatmentsRepository();
+
+  static const List<Map<String, String>> _defaultDiseases = [
+    {'id': 'swine_pox', 'name': 'Swine Pox'},
+    {'id': 'erysipelas', 'name': 'Erysipelas'},
+    {'id': 'greasy_pig_disease', 'name': 'Greasy Pig Disease'},
+    {'id': 'ringworm', 'name': 'Ringworm'},
+    {'id': 'mange', 'name': 'Mange'},
+    {'id': 'foot_and_mouth', 'name': 'Foot and Mouth Disease'},
+    {'id': 'sunburn', 'name': 'Sunburn'},
+  ];
+
   // Static disease treatment information
   final Map<String, Map<String, dynamic>> _diseaseInfo = {
     'Swine Pox': {
@@ -92,15 +106,28 @@ class _DiseasesPageState extends State<DiseasesPage> {
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
+  String _diseaseIdFromName(String name) {
+    final n = name.toLowerCase().trim();
+    if (n == 'swine pox') return 'swine_pox';
+    if (n == 'erysipelas') return 'erysipelas';
+    if (n == 'greasy pig disease') return 'greasy_pig_disease';
+    if (n == 'ringworm') return 'ringworm';
+    if (n == 'mange') return 'mange';
+    if (n == 'foot and mouth disease') return 'foot_and_mouth';
+    if (n == 'sunburn') return 'sunburn';
+    return n.replaceAll(' ', '_');
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
   }
 
-  Widget _buildDiseaseInfoCard(String name) {
+  Widget _buildDiseaseInfoCard(String name, {List<String>? overrideTreatments}) {
     final info = _diseaseInfo[name];
-    final treatments = info?['treatments'] as List<String>? ?? [];
+    final treatments =
+        overrideTreatments ?? (info?['treatments'] as List<String>? ?? []);
 
     return Container(
       margin: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
@@ -112,14 +139,26 @@ class _DiseasesPageState extends State<DiseasesPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Disease name
-          Text(
-            name,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Colors.black,
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              DiseaseImage(
+                diseaseId: _diseaseIdFromName(name),
+                size: 56,
+                borderRadius: 10,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           // Treatment label
@@ -218,24 +257,65 @@ class _DiseasesPageState extends State<DiseasesPage> {
           ),
           // Disease list
           Expanded(
-            child: Builder(
-              builder: (context) {
-                var diseaseNames =
-                    _diseaseInfo.keys.toList()..sort(
-                      (a, b) => a.toLowerCase().compareTo(b.toLowerCase()),
-                    );
-
-                // Filter by search query
-                if (_searchQuery.isNotEmpty) {
-                  diseaseNames =
-                      diseaseNames
-                          .where(
-                            (name) => name.toLowerCase().contains(_searchQuery),
-                          )
-                          .toList();
+            child: StreamBuilder(
+              stream: _repo.watchApprovedTreatments(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(
+                        'Failed to load treatments: ${snapshot.error}',
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
                 }
 
-                if (diseaseNames.isEmpty) {
+                final docs = snapshot.data?.docs ?? const [];
+                final approvedByDiseaseId = <String, Map<String, dynamic>>{};
+                for (final d in docs) {
+                  final data = d.data();
+                  final diseaseId = (data['diseaseId'] ?? d.id).toString();
+                  approvedByDiseaseId[diseaseId] = data;
+                }
+
+                // ALWAYS show the 7 diseases. If approved exists, use it; otherwise fallback to static.
+                var items = _defaultDiseases
+                    .map((d) {
+                      final id = d['id']!;
+                      final name = d['name']!;
+                      final approved = approvedByDiseaseId[id];
+                      final treatments = approved != null
+                          ? (approved['treatments'] as List? ?? [])
+                              .map((e) => e.toString())
+                              .toList()
+                          : (_diseaseInfo[name]?['treatments'] as List<String>? ?? []);
+                      return {
+                        'id': id,
+                        'name': name,
+                        'treatments': treatments,
+                        'isApproved': approved != null,
+                      };
+                    })
+                    .toList()
+                  ..sort((a, b) {
+                    final an = (a['name'] as String).toLowerCase();
+                    final bn = (b['name'] as String).toLowerCase();
+                    return an.compareTo(bn);
+                  });
+
+                if (_searchQuery.isNotEmpty) {
+                  items = items
+                      .where(
+                        (m) => (m['name'] as String)
+                            .toLowerCase()
+                            .contains(_searchQuery),
+                      )
+                      .toList();
+                }
+
+                if (items.isEmpty) {
                   return Center(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -260,9 +340,12 @@ class _DiseasesPageState extends State<DiseasesPage> {
 
                 return ListView.builder(
                   padding: const EdgeInsets.only(top: 16, bottom: 16),
-                  itemCount: diseaseNames.length,
+                  itemCount: items.length,
                   itemBuilder: (context, index) {
-                    return _buildDiseaseInfoCard(diseaseNames[index]);
+                    final item = items[index];
+                    final name = item['name'] as String;
+                    final treatments = (item['treatments'] as List).cast<String>();
+                    return _buildDiseaseInfoCard(name, overrideTreatments: treatments);
                   },
                 );
               },

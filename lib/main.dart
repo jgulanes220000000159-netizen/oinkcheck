@@ -8,6 +8,7 @@ import 'user/register_page.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'expert/expert_dashboard.dart';
+import 'head_veterinarian/veterinarian_dashboard.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -254,7 +255,9 @@ class CapstoneApp extends StatelessWidget {
     }
 
     final userProfile = box.get('userProfile');
-    final role = userProfile != null ? userProfile['role'] : null;
+    final rawRole = userProfile != null ? userProfile['role'] : null;
+    final role =
+        rawRole != null ? rawRole.toString().trim().toLowerCase() : null;
     final userId = userProfile != null ? userProfile['userId'] : null;
 
     print('📱 User logged in as: $role');
@@ -289,7 +292,14 @@ class CapstoneApp extends StatelessWidget {
       }
     }
 
-    if (role == 'expert') {
+    final normalizedRole = role == 'head_veterinarian' || role == 'head veterinarian'
+        ? 'veterinarian'
+        : role;
+
+    if (normalizedRole == 'veterinarian') {
+      return const VeterinarianDashboard();
+    }
+    if (normalizedRole == 'expert') {
       return const ExpertDashboard();
     } else {
       return const HomePage();

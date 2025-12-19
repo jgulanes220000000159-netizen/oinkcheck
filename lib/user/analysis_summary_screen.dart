@@ -1645,96 +1645,88 @@ class _ImageCarouselViewerState extends State<_ImageCarouselViewer> {
 
                 return Stack(
                   children: [
-                    // Image layer - always centered
-                    Center(
-                      child: InteractiveViewer(
-                        minScale: 0.5,
-                        maxScale: 3.0,
-                        child: Image.file(
-                          File(imagePath),
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Container(
-                              color: Colors.grey[800],
-                              child: Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.error_outline,
-                                      color: Colors.white,
-                                      size: 64,
-                                    ),
-                                    const SizedBox(height: 16),
-                                    Text(
-                                      tr('error_loading_image'),
-                                      style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16,
+                    // Image + bounding boxes MUST be inside the same InteractiveViewer so they
+                    // zoom/pan together (prevents "boxes are off" when user taps/zooms).
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final maxW = constraints.maxWidth;
+                        final maxH = constraints.maxHeight;
+                        final imageAspect = imageSize.width / imageSize.height;
+                        final viewAspect = maxW / maxH;
+
+                        double displayW;
+                        double displayH;
+                        if (viewAspect > imageAspect) {
+                          // view is wider -> constrain by height
+                          displayH = maxH;
+                          displayW = maxH * imageAspect;
+                        } else {
+                          // view is taller -> constrain by width
+                          displayW = maxW;
+                          displayH = maxW / imageAspect;
+                        }
+
+                        return Center(
+                          child: InteractiveViewer(
+                            minScale: 0.5,
+                            maxScale: 3.0,
+                            child: SizedBox(
+                              width: displayW,
+                              height: displayH,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Image.file(
+                                    File(imagePath),
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        color: Colors.grey[800],
+                                        child: Center(
+                                          child: Column(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.center,
+                                            children: [
+                                              Icon(
+                                                Icons.error_outline,
+                                                color: Colors.white,
+                                                size: 64,
+                                              ),
+                                              const SizedBox(height: 16),
+                                              Text(
+                                                tr('error_loading_image'),
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 16,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  if (widget.showBoundingBoxes &&
+                                      results.isNotEmpty &&
+                                      widget.imageSizes.isNotEmpty)
+                                    CustomPaint(
+                                      painter: DetectionPainter(
+                                        results: results,
+                                        originalImageSize: imageSize,
+                                        displayedImageSize:
+                                            Size(displayW, displayH),
+                                        displayedImageOffset: Offset.zero,
+                                        debugMode: false,
                                       ),
+                                      size: Size(displayW, displayH),
                                     ),
-                                  ],
-                                ),
+                                ],
                               ),
-                            );
-                          },
-                        ),
-                      ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                    // Bounding boxes overlay - positioned absolutely
-                    if (widget.showBoundingBoxes &&
-                        results.isNotEmpty &&
-                        widget.imageSizes.isNotEmpty)
-                      Positioned.fill(
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            // Calculate the actual displayed image size and position
-                            final screenSize = MediaQuery.of(context).size;
-                            final imageAspect =
-                                imageSize.width / imageSize.height;
-                            final screenAspect =
-                                screenSize.width / screenSize.height;
-
-                            Size displayedImageSize;
-                            Offset displayedImageOffset;
-
-                            if (screenAspect > imageAspect) {
-                              // Screen is wider than image - image fits height
-                              displayedImageSize = Size(
-                                screenSize.height * imageAspect,
-                                screenSize.height,
-                              );
-                              displayedImageOffset = Offset(
-                                (screenSize.width - displayedImageSize.width) /
-                                    2,
-                                0,
-                              );
-                            } else {
-                              // Screen is taller than image - image fits width
-                              displayedImageSize = Size(
-                                screenSize.width,
-                                screenSize.width / imageAspect,
-                              );
-                              displayedImageOffset = Offset(
-                                0,
-                                (screenSize.height -
-                                        displayedImageSize.height) /
-                                    2,
-                              );
-                            }
-
-                            return CustomPaint(
-                              painter: DetectionPainter(
-                                results: results,
-                                originalImageSize: imageSize,
-                                displayedImageSize: displayedImageSize,
-                                displayedImageOffset: displayedImageOffset,
-                              ),
-                              size: screenSize,
-                            );
-                          },
-                        ),
-                      ),
                   ],
                 );
               },

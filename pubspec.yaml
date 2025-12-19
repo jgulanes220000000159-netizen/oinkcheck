@@ -65,13 +65,14 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/labelsv2.txt
-    - assets/v40.tflite
+    - assets/labels.txt
+    - assets/vv6.tflite
     - assets/logo.png
     - assets/applogo.png
     - assets/applogo_header.png
     - assets/google-icon-1.png
     - assets/replace_disease/
+    - assets/images/diseases/
     - assets/lang/en.json
     - assets/lang/tl.json
     - assets/lang/bs.json

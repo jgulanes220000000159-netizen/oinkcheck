@@ -29,8 +29,12 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
 
   bool _isLoading = true;
 
-  // Default center (Philippines - Mindanao region)
-  static const LatLng _center = LatLng(7.8731, 125.0000);
+  // Davao del Norte (approx bounds). Used to force the map to start focused on the province.
+  // You can tighten/adjust these bounds anytime if you want a closer initial view.
+  static final LatLngBounds _davaoDelNorteBounds = LatLngBounds(
+    const LatLng(6.95, 125.45), // SW
+    const LatLng(7.75, 126.05), // NE
+  );
 
   @override
   void initState() {
@@ -234,8 +238,15 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                     child: FlutterMap(
                       mapController: _mapController,
                       options: MapOptions(
-                        center: _center,
-                        zoom: 7.0,
+                        onMapReady: () {
+                          // Force zoom to Davao del Norte province on open.
+                          _mapController.fitCamera(
+                            CameraFit.bounds(
+                              bounds: _davaoDelNorteBounds,
+                              padding: const EdgeInsets.all(32),
+                            ),
+                          );
+                        },
                         minZoom: 5.0,
                         maxZoom: 18.0,
                       ),

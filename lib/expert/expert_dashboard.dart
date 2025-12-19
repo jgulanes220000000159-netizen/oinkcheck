@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'scan_request_list.dart';
-import 'disease_editor.dart';
+import 'treatment_editor.dart';
 import 'expert_profile.dart';
+import '../user/disease_map_page.dart';
 // import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive/hive.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'dart:async'; // Added for StreamSubscription
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -40,8 +40,9 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
     _pages = <Widget>[
       ExpertHomePage(), // Home tab
       ScanRequestList(initialTabIndex: _requestsInitialTab), // Requests tab
-      DiseaseEditor(), // Diseases tab
+      TreatmentEditorPage(), // Manage Treatments tab
       ExpertProfile(), // Profile tab
+      const DiseaseMapPage(), // Disease Map (same as farmer; starts zoomed to Davao del Norte)
     ];
   }
 
@@ -133,24 +134,36 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
     // Do not auto-clear; Clear when opening individual pending card
   }
 
+  bool _canGoBack() {
+    return _selectedIndex != 0; // Can go back if not on home page
+  }
+
+  Future<Map<String, dynamic>?> _loadExpertProfile() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return null;
+
+      final doc =
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .get();
+
+      if (doc.exists) {
+        return doc.data();
+      }
+    } catch (e) {
+      // Try loading from Hive cache
+      try {
+        final box = await Hive.openBox('userBox');
+        return box.get('userProfile') as Map<String, dynamic>?;
+      } catch (_) {}
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Get the appropriate title based on selected index
-    String getTitle() {
-      switch (_selectedIndex) {
-        case 0:
-          return 'Home';
-        case 1:
-          return 'Requests';
-        case 2:
-          return 'Diseases';
-        case 3:
-          return 'Profile';
-        default:
-          return 'Expert Dashboard';
-      }
-    }
-
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.white,
@@ -158,43 +171,17 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
         statusBarBrightness: Brightness.light,
       ),
       child: Scaffold(
-        body: Stack(
-          children: [
-            // Main content
-            Column(
-              children: [
-                SafeArea(
-                  bottom: false,
-                  child: SizedBox(
-                    height: 64, // Height of the header + padding
-                  ),
-                ),
-                Expanded(
-                  child: SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 15),
-                      child:
-                          _pages.isNotEmpty
-                              ? _pages[_selectedIndex]
-                              : const Center(
-                                child: CircularProgressIndicator(),
-                              ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            // Green header with shadow on top
-            SafeArea(
-              bottom: false,
-              child: Container(
+        resizeToAvoidBottomInset: false,
+        body: SafeArea(
+          child: Column(
+            children: [
+              // Green header (persistent across all pages)
+              Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.green,
                   borderRadius: const BorderRadius.only(
-                    bottomLeft: Radius.circular(20),
-                    bottomRight: Radius.circular(20),
+                    bottomRight: Radius.circular(50),
                   ),
                   boxShadow: [
                     BoxShadow(
@@ -205,177 +192,196 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
                     ),
                   ],
                 ),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Logo with circular container (matching farmer side)
-                    GestureDetector(
-                      onTap: () => _onItemTapped(0),
-                      child: Container(
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white,
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
+                    FutureBuilder<Map<String, dynamic>?>(
+                      future: _loadExpertProfile(),
+                      builder: (context, snapshot) {
+                        final expertName =
+                            snapshot.data?['fullName'] ?? 'Expert';
+                        final firstName = expertName.split(' ').first;
+
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Hello - Dr. $firstName',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  _selectedIndex = 3; // Profile tab
+                                });
+                              },
+                              child: Container(
+                                width: 44,
+                                height: 44,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.2),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: const Icon(
+                                  Icons.person,
+                                  color: Colors.green,
+                                  size: 28,
+                                ),
+                              ),
                             ),
                           ],
-                        ),
-                        padding: const EdgeInsets.all(2),
-                        child: Image.asset(
-                          'assets/applogo_header.png',
-                          width: 37,
-                          height: 37,
-                        ),
-                      ),
+                        );
+                      },
                     ),
-                    const SizedBox(width: 8),
-                    // App title like farmer side
-                    GestureDetector(
-                      onTap: () => _onItemTapped(0),
+                    const SizedBox(height: 8),
+                    Center(
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: const [
-                          Text(
-                            'Mango',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              shadows: [
-                                Shadow(
-                                  color: Colors.black26,
-                                  offset: Offset(0, 2),
-                                  blurRadius: 4,
-                                ),
-                              ],
-                            ),
+                          Icon(
+                            Icons.verified_user,
+                            color: Colors.white70,
+                            size: 18,
                           ),
+                          SizedBox(width: 6),
                           Text(
-                            'Sense',
+                            'Expert Validation Portal',
                             style: TextStyle(
-                              color: Colors.yellow,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                              shadows: [
-                                Shadow(
-                                  color: Colors.black26,
-                                  offset: Offset(0, 2),
-                                  blurRadius: 4,
-                                ),
-                              ],
+                              color: Colors.white70,
+                              fontSize: 14,
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const Spacer(),
-                    // Right badge shows current page title
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Colors.white.withOpacity(0.3),
-                          width: 1,
-                        ),
-                      ),
-                      child: Text(
-                        getTitle(),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
                   ],
                 ),
               ),
-            ),
-          ],
-        ),
-        bottomNavigationBar: Container(
-          decoration: BoxDecoration(
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 12,
-                offset: const Offset(0, -4),
-                spreadRadius: 1,
+              // Content area
+              Expanded(
+                child:
+                    _pages.isNotEmpty
+                        ? _pages[_selectedIndex]
+                        : const Center(child: CircularProgressIndicator()),
               ),
             ],
           ),
-          child: BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            onTap: _onItemTapped,
-            selectedItemColor: Colors.green,
-            type: BottomNavigationBarType.fixed,
-            elevation: 0,
-            items: [
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.home),
-                label: 'Home',
+        ),
+        bottomNavigationBar: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0F8F0), // Very light green
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, -2),
               ),
-              BottomNavigationBarItem(
-                icon: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.list_alt),
-                    if (_pendingNotifications > 0)
-                      Positioned(
-                        right: -6,
-                        top: -6,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 2,
-                                offset: const Offset(0, 1),
-                              ),
-                            ],
-                          ),
-                          constraints: const BoxConstraints(
-                            minWidth: 16,
-                            minHeight: 16,
-                          ),
-                          child: Text(
-                            _pendingNotifications > 9
-                                ? '9+'
-                                : '$_pendingNotifications',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            textAlign: TextAlign.center,
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Back button (only visible when not on home)
+              if (_canGoBack())
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedIndex = 0; // Go back to home
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.green,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.arrow_back, color: Colors.white, size: 18),
+                        SizedBox(width: 6),
+                        Text(
+                          'Back',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
                           ),
                         ),
-                      ),
-                  ],
+                      ],
+                    ),
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+              // Notification button
+              InkWell(
+                onTap: () {
+                  // Navigate to notifications/requests
+                  setState(() {
+                    _selectedIndex = 1;
+                  });
+                },
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Icon(Icons.notifications, color: Colors.green, size: 24),
+                      if (_pendingNotifications > 0)
+                        Positioned(
+                          right: -4,
+                          top: -4,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            child: Text(
+                              _pendingNotifications > 9
+                                  ? '9+'
+                                  : '$_pendingNotifications',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-                label: 'Requests',
-              ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.local_hospital),
-                label: 'Diseases',
-              ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.person),
-                label: 'Profile',
               ),
             ],
           ),
@@ -383,6 +389,11 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
       ),
     );
   }
+}
+
+// Navigate to page helper
+void _navigateToPage(BuildContext context, Widget page) {
+  Navigator.push(context, MaterialPageRoute(builder: (context) => page));
 }
 
 // Expert Home Page Widget
@@ -399,6 +410,7 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
   String _expertName = 'Expert';
   // double _averageResponseTime = 0.0; // superseded by filtered average
   List<Map<String, dynamic>> _recentReviews = [];
+  List<Map<String, dynamic>> _recentRequests = []; // For summary table
   bool _isOffline = false;
   bool _isLoading = true;
   StreamSubscription<QuerySnapshot>? _streamSubscription;
@@ -1124,12 +1136,45 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
       final statsBox = await Hive.openBox('expertStatsBox');
       await statsBox.put('expertStats', statsData);
 
+      // Load recent requests for summary table (last 10)
+      final allRecentDocs =
+          docs.where((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return data['status'] == 'completed' ||
+                data['status'] == 'reviewed' ||
+                data['status'] == 'pending' ||
+                data['status'] == 'pending_review';
+          }).toList();
+
+      // Sort by date descending
+      allRecentDocs.sort((a, b) {
+        final aData = a.data() as Map<String, dynamic>;
+        final bData = b.data() as Map<String, dynamic>;
+        final aDate =
+            DateTime.tryParse(aData['submittedAt'] ?? '') ?? DateTime(1970);
+        final bDate =
+            DateTime.tryParse(bData['submittedAt'] ?? '') ?? DateTime(1970);
+        return bDate.compareTo(aDate);
+      });
+
+      final recentRequestsList =
+          allRecentDocs.take(5).map((doc) {
+            final data = doc.data() as Map<String, dynamic>;
+            return {
+              'date': data['submittedAt'] ?? '',
+              'disease': data['diseaseSummary']?[0]?['disease'] ?? 'Unknown',
+              'location': data['location'] ?? 'Unknown',
+              'status': data['status'] ?? 'unknown',
+            };
+          }).toList();
+
       setState(() {
         _expertName = expertName;
         _totalCompleted = completedDocs.length;
         _pendingRequests = pendingDocs.length;
         // Keep computing average for caching/debug, but UI uses filtered average
         _recentReviews = recentReviews;
+        _recentRequests = recentRequestsList;
         _isOffline = false;
       });
     } catch (e) {
@@ -1284,121 +1329,284 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
 
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(Icons.track_changes, color: Colors.blue[700]),
-            const SizedBox(width: 8),
-            Expanded(
-              child: const Text('Performance Targets'),
+      builder:
+          (context) => AlertDialog(
+            title: Row(
+              children: [
+                Icon(Icons.track_changes, color: Colors.blue[700]),
+                const SizedBox(width: 8),
+                Expanded(child: const Text('Performance Targets')),
+              ],
             ),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Current Status
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.blue[50],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue[200]!),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Your Current Average',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Current Status
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[50],
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.blue[200]!),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _formatResponseTime(currentAvg),
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue[900],
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Level: $currentLevel',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.blue[700],
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              
-              // Next Target (if applicable)
-              if (nextTarget != null) ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.green[200]!),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.arrow_upward,
-                            color: Colors.green[700],
-                            size: 18,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Your Current Average',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w500,
                           ),
-                          const SizedBox(width: 6),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _formatResponseTime(currentAvg),
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[900],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Level: $currentLevel',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.blue[700],
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Next Target (if applicable)
+                  if (nextTarget != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.green[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.green[200]!),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.arrow_upward,
+                                color: Colors.green[700],
+                                size: 18,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Target to Achieve',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(
+                                nextTarget['icon'] as IconData,
+                                color: nextTarget['color'] as Color,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      nextTarget['name'] as String,
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: nextTarget['color'] as Color,
+                                      ),
+                                    ),
+                                    Text(
+                                      nextTarget['range'] as String,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[700],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.speed,
+                                  size: 16,
+                                  color: Colors.green[700],
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    'Reduce by ${_formatResponseTime(hoursToImprove)} to reach this level',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[800],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ] else ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.amber[200]!),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.star, color: Colors.amber[700], size: 20),
+                          const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Target to Achieve',
+                              'You\'re already at the top level! Keep it up!',
                               style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
+                                fontSize: 13,
+                                color: Colors.amber[900],
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Row(
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // All Performance Levels
+                  Text(
+                    'Performance Levels',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...performanceLevels.map((level) {
+                    final isCurrent = level['name'] == currentLevel;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color:
+                            isCurrent
+                                ? (level['color'] as Color).withOpacity(0.1)
+                                : Colors.grey[50],
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color:
+                              isCurrent
+                                  ? (level['color'] as Color)
+                                  : Colors.grey[300]!,
+                          width: isCurrent ? 2 : 1,
+                        ),
+                      ),
+                      child: Row(
                         children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: level['color'] as Color,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
                           Icon(
-                            nextTarget['icon'] as IconData,
-                            color: nextTarget['color'] as Color,
-                            size: 20,
+                            level['icon'] as IconData,
+                            color: level['color'] as Color,
+                            size: 18,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  nextTarget['name'] as String,
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.bold,
-                                    color: nextTarget['color'] as Color,
-                                  ),
+                                Row(
+                                  children: [
+                                    Flexible(
+                                      child: Text(
+                                        level['name'] as String,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight:
+                                              isCurrent
+                                                  ? FontWeight.bold
+                                                  : FontWeight.w600,
+                                          color: level['color'] as Color,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    if (isCurrent) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: level['color'] as Color,
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'CURRENT',
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
                                 ),
+                                const SizedBox(height: 2),
                                 Text(
-                                  nextTarget['range'] as String,
+                                  level['range'] as String,
                                   style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey[700],
+                                    fontSize: 11,
+                                    color: Colors.grey[600],
                                   ),
                                 ),
                               ],
@@ -1406,173 +1614,18 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.speed, size: 16, color: Colors.green[700]),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                'Reduce by ${_formatResponseTime(hoursToImprove)} to reach this level',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey[800],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ] else ...[
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.amber[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.amber[200]!),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.star, color: Colors.amber[700], size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'You\'re already at the top level! Keep it up!',
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.amber[900],
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              // All Performance Levels
-              Text(
-                'Performance Levels',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey[800],
-                ),
+                    );
+                  }).toList(),
+                ],
               ),
-              const SizedBox(height: 8),
-              ...performanceLevels.map((level) {
-                final isCurrent = level['name'] == currentLevel;
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: isCurrent
-                        ? (level['color'] as Color).withOpacity(0.1)
-                        : Colors.grey[50],
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isCurrent
-                          ? (level['color'] as Color)
-                          : Colors.grey[300]!,
-                      width: isCurrent ? 2 : 1,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: level['color'] as Color,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Icon(
-                        level['icon'] as IconData,
-                        color: level['color'] as Color,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    level['name'] as String,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: isCurrent
-                                          ? FontWeight.bold
-                                          : FontWeight.w600,
-                                      color: level['color'] as Color,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                if (isCurrent) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: level['color'] as Color,
-                                      borderRadius: BorderRadius.circular(10),
-                                    ),
-                                    child: Text(
-                                      'CURRENT',
-                                      style: TextStyle(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.white,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              level['range'] as String,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Got it'),
+              ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Got it'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -1629,156 +1682,100 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Welcome Section
-                Card(
-                  color: Colors.green[50],
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Icon(
-                              Icons.person,
-                              color: Colors.green[700],
-                              size: 24,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Welcome back, $_expertName!',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green[700],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Ready to review some requests?',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.green[600],
-                          ),
-                        ),
-                      ],
+                const SizedBox(height: 8),
+                // Four action cards
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildActionCard(
+                        context,
+                        'Submitted\nReports',
+                        Icons.description,
+                        Colors.green,
+                        () {
+                          final dashboard =
+                              context
+                                  .findAncestorStateOfType<
+                                    _ExpertDashboardState
+                                  >();
+                          dashboard?.setState(() {
+                            dashboard._requestsInitialTab = 0; // Pending tab
+                            dashboard._selectedIndex = 1; // Requests page
+                            dashboard._updatePages();
+                          });
+                        },
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-
-                // Statistics Section
-                Text(
-                  'Your Statistics',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.grey[800],
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildActionCard(
+                        context,
+                        'Validated\nReports',
+                        Icons.check_circle,
+                        const Color(0xFF00BCD4), // Teal color
+                        () {
+                          final dashboard =
+                              context
+                                  .findAncestorStateOfType<
+                                    _ExpertDashboardState
+                                  >();
+                          dashboard?.setState(() {
+                            dashboard._requestsInitialTab = 1; // Completed tab
+                            dashboard._selectedIndex = 1; // Requests page
+                            dashboard._updatePages();
+                          });
+                        },
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
                     Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          // Navigate to requests tab and show completed requests
-                          if (context.mounted) {
-                            final dashboard =
-                                context
-                                    .findAncestorStateOfType<
-                                      _ExpertDashboardState
-                                    >();
-                            dashboard?._navigateToRequests(
-                              1,
-                            ); // Show completed tab
-                          }
+                      child: _buildActionCard(
+                        context,
+                        'Disease\nMap',
+                        Icons.map,
+                        Colors.orange,
+                        () {
+                          final dashboard =
+                              context
+                                  .findAncestorStateOfType<
+                                    _ExpertDashboardState
+                                  >();
+                          dashboard?.setState(() {
+                            dashboard._selectedIndex = 4; // Disease Map page
+                            dashboard._updatePages();
+                          });
                         },
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.check_circle,
-                                  color: Colors.green,
-                                  size: 32,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '$_totalCompleted',
-                                  style: const TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const Text(
-                                  'Completed Reviews',
-                                  style: TextStyle(fontSize: 12),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: GestureDetector(
-                        onTap: () {
-                          // Navigate to requests tab and show pending requests
-                          if (context.mounted) {
-                            final dashboard =
-                                context
-                                    .findAncestorStateOfType<
-                                      _ExpertDashboardState
-                                    >();
-                            dashboard?._navigateToRequests(
-                              0,
-                            ); // Show pending tab
-                          }
+                      child: _buildActionCard(
+                        context,
+                        'Manage\nTreatments',
+                        Icons.medical_services,
+                        Colors.blue,
+                        () {
+                          final dashboard =
+                              context
+                                  .findAncestorStateOfType<
+                                    _ExpertDashboardState
+                                  >();
+                          dashboard?.setState(() {
+                            dashboard._selectedIndex = 2; // Diseases tab
+                          });
                         },
-                        child: Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.pending,
-                                  color: Colors.orange,
-                                  size: 32,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '$_pendingRequests',
-                                  style: const TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                const Text(
-                                  'Pending Requests',
-                                  style: TextStyle(fontSize: 12),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 20),
-
-                // Response Time Analysis Section
+                const SizedBox(height: 24),
+                // Summary section
                 Text(
-                  'Response Time Analysis',
+                  'Summary',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -1786,531 +1783,126 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Time Range Filter at top
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[50],
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.grey[300]!),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.calendar_today, size: 18),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: DropdownButton<int>(
-                                  value: _selectedRangeIndex,
-                                  isExpanded: true,
-                                  underline: const SizedBox.shrink(),
-                                  items: [
-                                    const DropdownMenuItem(
-                                      value: 0,
-                                      child: Text('Last 7 Days'),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 1,
-                                      child: Text(
-                                        _monthlyYear != null &&
-                                                _monthlyMonth != null
-                                            ? DateFormat(
-                                              'MMMM yyyy',
-                                              'en',
-                                            ).format(
-                                              DateTime(
-                                                _monthlyYear!,
-                                                _monthlyMonth!,
-                                                1,
-                                              ),
-                                            )
-                                            : 'Monthly',
-                                      ),
-                                    ),
-                                    DropdownMenuItem(
-                                      value: 2,
-                                      child: Text(
-                                        _customStartDate != null &&
-                                                _customEndDate != null
-                                            ? 'Custom: ${DateFormat('MMM d', 'en').format(_customStartDate!)} – ${DateFormat('MMM d', 'en').format(_customEndDate!)}'
-                                            : 'Custom',
-                                      ),
-                                    ),
-                                  ],
-                                  onChanged: (i) async {
-                                    if (i == null) return;
-                                    if (i == 1) {
-                                      // Show custom month-year picker
-                                      final now = DateTime.now();
-                                      final picked = await _showMonthYearPicker(
-                                        context: context,
-                                        initialDate: DateTime(
-                                          _monthlyYear ?? now.year,
-                                          _monthlyMonth ?? now.month,
-                                          1,
-                                        ),
-                                        firstDate: DateTime(2020, 1),
-                                        lastDate: DateTime(now.year, now.month),
-                                      );
-                                      if (picked != null) {
-                                        setState(() {
-                                          _monthlyYear = picked.year;
-                                          _monthlyMonth = picked.month;
-                                          _selectedRangeIndex = 1;
-                                        });
-                                        await _saveRangeIndex(1);
-                                        await _saveMonthly(
-                                          picked.year,
-                                          picked.month,
-                                        );
-                                      }
-                                    } else if (i == 2) {
-                                      await _pickCustomRange();
-                                    } else {
-                                      setState(() => _selectedRangeIndex = 0);
-                                      await _saveRangeIndex(0);
-                                    }
-                                  },
-                                ),
-                              ),
-                            ],
+                // Summary table
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      // Table header
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: const BorderRadius.vertical(
+                            top: Radius.circular(12),
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        // Metrics Row
-                        Row(
+                        child: Row(
                           children: [
-                            // Completed Reviews for timeframe
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.check_circle,
-                                        color: Colors.green,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'Reviews in Period',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.grey[800],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    '${_filterReviewsForRange().length}',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.green[700],
-                                    ),
-                                  ),
-                                ],
+                            const Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Date',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            // Average Response Time
+                            const Expanded(
+                              flex: 3,
+                              child: Text(
+                                'Disease',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
+                            const Expanded(
+                              flex: 2,
+                              child: Text(
+                                'Location',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            ),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.timer,
-                                        color: Colors.blue,
-                                        size: 20,
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Text(
-                                          'Avg Response Time',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w600,
-                                            color: Colors.grey[800],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    '${_formatResponseTime(_filteredAverageHours())}',
-                                    style: TextStyle(
-                                      fontSize: 24,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue[700],
-                                    ),
-                                  ),
-                                ],
+                              flex: 2,
+                              child: Text(
+                                'Status',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        // Performance Feedback
-                        Builder(
-                          builder: (context) {
-                            final feedback = _getPerformanceFeedback(
-                              _filteredAverageHours(),
-                            );
-                            final currentAvg = _filteredAverageHours();
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: (feedback['color'] as Color).withOpacity(
-                                  0.1,
-                                ),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: (feedback['color'] as Color)
-                                      .withOpacity(0.3),
-                                  width: 1,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    feedback['icon'] as IconData,
-                                    color: feedback['color'] as Color,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      feedback['message'] as String,
-                                      style: TextStyle(
-                                        color: feedback['color'] as Color,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  InkWell(
-                                    onTap: () => _showPerformanceTargetsDialog(
-                                      context,
-                                      currentAvg,
-                                    ),
-                                    borderRadius: BorderRadius.circular(16),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(4),
-                                      child: Icon(
-                                        Icons.info_outline,
-                                        color: feedback['color'] as Color,
-                                        size: 18,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 16),
-                        if (_recentReviews.isNotEmpty) ...[
-                          Text(
-                            'Response Time Distribution',
+                      ),
+                      // Actual data rows
+                      if (_recentRequests.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Text(
+                            'No recent requests',
                             style: TextStyle(
+                              color: Colors.grey[600],
                               fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey[700],
                             ),
+                            textAlign: TextAlign.center,
                           ),
-                          const SizedBox(height: 12),
-                          Builder(
-                            builder: (context) {
-                              // Filter reviews per selected range
-                              DateTime today = DateTime.now();
-                              DateTime start7 = DateTime(
-                                today.year,
-                                today.month,
-                                today.day,
-                              ).subtract(const Duration(days: 6));
-                              final List<Map<String, dynamic>> filtered =
-                                  _recentReviews.where((r) {
-                                      final d = r['date'] as DateTime?;
-                                      if (d == null) return false;
-                                      final dayOnly = DateTime(
-                                        d.year,
-                                        d.month,
-                                        d.day,
-                                      );
-                                      if (_selectedRangeIndex == 0) {
-                                        return !dayOnly.isBefore(start7) &&
-                                            !dayOnly.isAfter(
-                                              DateTime(
-                                                today.year,
-                                                today.month,
-                                                today.day,
-                                              ),
-                                            );
-                                      }
-                                      if (_selectedRangeIndex == 1 &&
-                                          _monthlyYear != null &&
-                                          _monthlyMonth != null) {
-                                        // Monthly filter
-                                        final startOfMonth = DateTime(
-                                          _monthlyYear!,
-                                          _monthlyMonth!,
-                                          1,
-                                        );
-                                        final endOfMonth = DateTime(
-                                          _monthlyYear!,
-                                          _monthlyMonth! + 1,
-                                          0,
-                                        );
-                                        return !dayOnly.isBefore(
-                                              startOfMonth,
-                                            ) &&
-                                            !dayOnly.isAfter(endOfMonth);
-                                      }
-                                      if (_selectedRangeIndex == 2) {
-                                        if (_customStartDate == null ||
-                                            _customEndDate == null)
-                                          return true;
-                                        final s = DateTime(
-                                          _customStartDate!.year,
-                                          _customStartDate!.month,
-                                          _customStartDate!.day,
-                                        );
-                                        final e = DateTime(
-                                          _customEndDate!.year,
-                                          _customEndDate!.month,
-                                          _customEndDate!.day,
-                                        );
-                                        return !dayOnly.isBefore(s) &&
-                                            !dayOnly.isAfter(e);
-                                      }
-                                      return true; // Fallback
-                                    }).toList();
+                        )
+                      else
+                        ..._recentRequests.map((request) {
+                          final status = request['status'] as String;
+                          final statusText =
+                              status == 'completed' || status == 'reviewed'
+                                  ? 'Verified'
+                                  : 'Pending';
+                          final statusColor =
+                              status == 'completed' || status == 'reviewed'
+                                  ? Colors.green
+                                  : Colors.orange;
 
-                              // Calculate distribution into categories
-                              int excellent = 0; // 0-6h
-                              int good = 0; // 6-12h
-                              int acceptable = 0; // 12-24h
-                              int needsImprovement = 0; // 24-48h
-                              int critical = 0; // >48h
+                          // Format date
+                          String formattedDate = 'N/A';
+                          try {
+                            final dateStr = request['date'] as String;
+                            if (dateStr.isNotEmpty) {
+                              final date = DateTime.parse(dateStr);
+                              formattedDate = DateFormat(
+                                'yyyy-MM-dd',
+                              ).format(date);
+                            }
+                          } catch (e) {
+                            // Keep N/A
+                          }
 
-                              for (var review in filtered) {
-                                final responseTime = (review['responseTime'] as num).toDouble();
-                                if (responseTime <= 6) {
-                                  excellent++;
-                                } else if (responseTime <= 12) {
-                                  good++;
-                                } else if (responseTime <= 24) {
-                                  acceptable++;
-                                } else if (responseTime <= 48) {
-                                  needsImprovement++;
-                                } else {
-                                  critical++;
-                                }
-                              }
-
-                              final distribution = [
-                                excellent,
-                                good,
-                                acceptable,
-                                needsImprovement,
-                                critical,
-                              ];
-
-                              final maxValue = distribution.isEmpty
-                                  ? 1.0
-                                  : distribution.reduce((a, b) => a > b ? a : b).toDouble();
-
-                              // Category labels and colors
-                              final categories = [
-                                {'label': '0-6h', 'color': Colors.green, 'name': 'Excellent'},
-                                {'label': '6-12h', 'color': Colors.lightGreen, 'name': 'Good'},
-                                {'label': '12-24h', 'color': Colors.orange, 'name': 'Acceptable'},
-                                {'label': '24-48h', 'color': Colors.deepOrange, 'name': 'Needs Improvement'},
-                                {'label': '>48h', 'color': Colors.red, 'name': 'Critical'},
-                              ];
-
-                              return Column(
-                                children: [
-                                  // Bar Chart
-                                  SizedBox(
-                                    height: 200,
-                                    child: BarChart(
-                                      BarChartData(
-                                        alignment: BarChartAlignment.spaceAround,
-                                        maxY: maxValue > 0 ? maxValue * 1.2 : 10,
-                                        barTouchData: BarTouchData(
-                                          enabled: true,
-                                          touchTooltipData: BarTouchTooltipData(
-                                            getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                                              final category = categories[groupIndex];
-                                              return BarTooltipItem(
-                                                '${category['label']}\n${rod.toY.toInt()} reviews',
-                                                const TextStyle(
-                                                  color: Colors.white,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 12,
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ),
-                                        titlesData: FlTitlesData(
-                                          show: true,
-                                          rightTitles: AxisTitles(
-                                            sideTitles: SideTitles(showTitles: false),
-                                          ),
-                                          topTitles: AxisTitles(
-                                            sideTitles: SideTitles(showTitles: false),
-                                          ),
-                                          bottomTitles: AxisTitles(
-                                            sideTitles: SideTitles(
-                                              showTitles: true,
-                                              getTitlesWidget: (value, meta) {
-                                                final index = value.toInt();
-                                                if (index >= 0 && index < categories.length) {
-                                                  return Padding(
-                                                    padding: const EdgeInsets.only(top: 8),
-                                                    child: Text(
-                                                      categories[index]['label'] as String,
-                                                      style: TextStyle(
-                                                        fontSize: 10,
-                                                        color: Colors.grey[700],
-                                                      ),
-                                                    ),
-                                                  );
-                                                }
-                                                return const SizedBox.shrink();
-                                              },
-                                              reservedSize: 30,
-                                            ),
-                                          ),
-                                          leftTitles: AxisTitles(
-                                            sideTitles: SideTitles(
-                                              showTitles: true,
-                                              reservedSize: 40,
-                                              getTitlesWidget: (value, meta) {
-                                                if (value % 1 == 0 && value >= 0) {
-                                                  return Text(
-                                                    value.toInt().toString(),
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      color: Colors.grey[700],
-                                                    ),
-                                                  );
-                                                }
-                                                return const SizedBox.shrink();
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                        gridData: FlGridData(
-                                          show: true,
-                                          drawVerticalLine: false,
-                                          horizontalInterval: maxValue > 10 ? 5 : 1,
-                                          getDrawingHorizontalLine: (value) {
-                                            return FlLine(
-                                              color: Colors.grey[300]!,
-                                              strokeWidth: 1,
-                                            );
-                                          },
-                                        ),
-                                        borderData: FlBorderData(
-                                          show: true,
-                                          border: Border(
-                                            bottom: BorderSide(color: Colors.grey[400]!),
-                                            left: BorderSide(color: Colors.grey[400]!),
-                                          ),
-                                        ),
-                                        barGroups: distribution.asMap().entries.map((entry) {
-                                          final index = entry.key;
-                                          final value = entry.value.toDouble();
-                                          return BarChartGroupData(
-                                            x: index,
-                                            barRods: [
-                                              BarChartRodData(
-                                                toY: value,
-                                                color: categories[index]['color'] as Color,
-                                                width: 40,
-                                                borderRadius: const BorderRadius.vertical(
-                                                  top: Radius.circular(4),
-                                                ),
-                                              ),
-                                            ],
-                                          );
-                                        }).toList(),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  // Compact Legend - Performance names only
-                                  Wrap(
-                                    alignment: WrapAlignment.center,
-                                    spacing: 16,
-                                    runSpacing: 8,
-                                    children: categories.map((category) {
-                                      return Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Container(
-                                            width: 12,
-                                            height: 12,
-                                            decoration: BoxDecoration(
-                                              color: category['color'] as Color,
-                                              borderRadius: BorderRadius.circular(3),
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            category['name'] as String,
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: Colors.grey[600],
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                          ),
-                                        ],
-                                      );
-                                    }).toList(),
-                                  ),
-                                ],
-                              );
-                            },
-                          ),
-                        ] else ...[
-                          Container(
-                            height: 100,
-                            alignment: Alignment.center,
-                            child: Text(
-                              'No recent reviews to display',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
+                          return _buildSummaryRow(
+                            formattedDate,
+                            request['disease'] as String,
+                            request['location'] as String,
+                            statusText,
+                            statusColor,
+                          );
+                        }).toList(),
+                    ],
                   ),
                 ),
               ],
@@ -2318,6 +1910,99 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildActionCard(
+    BuildContext context,
+    String title,
+    IconData icon,
+    Color color,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 120,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(15),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: Colors.white, size: 40),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSummaryRow(
+    String date,
+    String disease,
+    String location,
+    String status,
+    Color statusColor,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 2,
+            child: Text(date, style: const TextStyle(fontSize: 12)),
+          ),
+          Expanded(
+            flex: 3,
+            child: Text(disease, style: const TextStyle(fontSize: 12)),
+          ),
+          Expanded(
+            flex: 2,
+            child: Text(location, style: const TextStyle(fontSize: 12)),
+          ),
+          Expanded(
+            flex: 2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                status,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: statusColor,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

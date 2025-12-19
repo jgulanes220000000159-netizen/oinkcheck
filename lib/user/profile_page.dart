@@ -3,7 +3,6 @@ import 'edit_profile_page.dart';
 import 'login_page.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import '../about_app_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1100,18 +1099,6 @@ class _ProfilePageState extends State<ProfilePage> {
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => const EditProfilePage(),
-                                ),
-                              );
-                            },
-                          ),
-                          _buildProfileOption(
-                            title: tr('about_app'),
-                            icon: Icons.info,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const AboutAppPage(),
                                 ),
                               );
                             },

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 // import '../routes.dart';
-import '../about_app_page.dart';
 import '../user/login_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
@@ -1626,18 +1625,6 @@ class _ExpertProfileState extends State<ExpertProfile> {
                             title: 'Edit Profile',
                             icon: Icons.edit,
                             onTap: () => _showEditProfileDialog(context),
-                          ),
-                          _buildProfileOption(
-                            title: 'About App',
-                            icon: Icons.info,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const AboutAppPage(),
-                                ),
-                              );
-                            },
                           ),
                           _buildProfileOption(
                             title: 'Change Password',
