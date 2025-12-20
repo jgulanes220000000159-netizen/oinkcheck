@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+import '../shared/pig_disease_ui.dart';
 
 class ScanRequestDetail extends StatefulWidget {
   final Map<String, dynamic> request;
@@ -21,18 +22,12 @@ class ScanRequestDetail extends StatefulWidget {
 
 class _ScanRequestDetailState extends State<ScanRequestDetail> {
   final TextEditingController _commentController = TextEditingController();
-  final TextEditingController _treatmentController = TextEditingController();
-  final TextEditingController _dosageController = TextEditingController();
-  final TextEditingController _frequencyController = TextEditingController();
-  final TextEditingController _precautionsController = TextEditingController();
-  final TextEditingController _durationController = TextEditingController();
   bool _isSubmitting = false;
   bool _showBoundingBoxes = true;
-  String _selectedSeverity = 'medium';
   Timer? _heartbeatTimer;
 
   // Disease information loaded from Firestore (kept for potential future use)
-  Map<String, Map<String, dynamic>> _diseaseInfo = {};
+  // Map<String, Map<String, dynamic>> _diseaseInfo = {}; // removed (not used)
 
   @override
   void initState() {
@@ -58,58 +53,12 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
   }
 
   Future<void> _loadDiseaseInfo() async {
-    final diseaseBox = await Hive.openBox('diseaseBox');
-    // Try to load from local storage first
-    final localDiseaseInfo = diseaseBox.get('diseaseInfo');
-    if (localDiseaseInfo != null && localDiseaseInfo is Map) {
-      setState(() {
-        _diseaseInfo = Map<String, Map<String, dynamic>>.from(
-          localDiseaseInfo.map(
-            (k, v) =>
-                MapEntry(k as String, Map<String, dynamic>.from(v as Map)),
-          ),
-        );
-      });
-    }
-    // Always try to fetch latest from Firestore
-    try {
-      final snapshot =
-          await FirebaseFirestore.instance.collection('diseases').get();
-      final Map<String, Map<String, dynamic>> fetched = {};
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final name = data['name'] ?? '';
-        if (name.isNotEmpty) {
-          fetched[name] = {
-            'scientificName': data['scientificName'] ?? '',
-            'symptoms': List<String>.from(data['symptoms'] ?? []),
-            'treatments': List<String>.from(data['treatments'] ?? []),
-          };
-        }
-      }
-      if (fetched.isNotEmpty) {
-        setState(() {
-          _diseaseInfo = fetched;
-        });
-        await diseaseBox.put('diseaseInfo', fetched);
-      }
-    } catch (e) {
-      print('Error fetching disease info: $e');
-    }
+    // Removed: disease info load (expert now only agrees/disagrees; no treatment plan).
   }
 
-  List<String> _selectedPreventiveMeasures = [];
   bool _isEditing = false;
 
-  final List<String> _preventiveMeasures = [
-    'Regular pruning',
-    'Proper spacing between plants',
-    'Adequate ventilation',
-    'Regular watering',
-    'Proper fertilization',
-    'Pest monitoring',
-    'Soil testing',
-  ];
+  // Removed: preventive measures list (no longer used).
 
   @override
   void dispose() {
@@ -117,11 +66,6 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
     // Release claim synchronously (fire and forget)
     _releaseReportClaimSync();
     _commentController.dispose();
-    _treatmentController.dispose();
-    _dosageController.dispose();
-    _frequencyController.dispose();
-    _precautionsController.dispose();
-    _durationController.dispose();
     super.dispose();
   }
 
@@ -252,18 +196,6 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
   }
 
   void _submitReview() async {
-    // Validate required fields
-    if (_commentController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please fill in the required field: Expert Comment'),
-          backgroundColor: Colors.red,
-          duration: Duration(seconds: 3),
-        ),
-      );
-      return;
-    }
-
     setState(() {
       _isSubmitting = true;
     });
@@ -280,24 +212,10 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
     final expertName = userProfile?['fullName'] ?? 'Expert';
 
     final expertReview = {
-      'comment': _commentController.text,
-      'severityAssessment': {
-        'level': _selectedSeverity,
-        'confidence': widget.request['diseaseSummary'][0]['averageConfidence'],
-        'notes': 'Expert assessment based on image analysis',
-      },
-      'treatmentPlan': {
-        'recommendations': [
-          {
-            'treatment': _treatmentController.text,
-            'dosage': _dosageController.text,
-            'frequency': _frequencyController.text,
-            'duration': _durationController.text,
-          },
-        ],
-        'precautions': _precautionsController.text,
-        'preventiveMeasures': _selectedPreventiveMeasures,
-      },
+      // New simplified expert review:
+      // Expert only agrees/disagrees + optional comment.
+      'comment': _commentController.text.trim(),
+      'decision': _selectedDecision,
       'expertName': expertName,
       'expertUid': user.uid,
     };
@@ -308,20 +226,70 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
       // Cancel heartbeat timer before submitting
       _heartbeatTimer?.cancel();
 
-      await FirebaseFirestore.instance
-          .collection('scan_requests')
-          .doc(docId)
-          .update({
-            'status': 'completed',
-            'expertReview': expertReview,
-            'expertName': expertName,
-            'expertUid': user.uid,
-            'reviewedAt': DateTime.now().toIso8601String(),
-            // Remove the claim fields
-            'reviewingBy': FieldValue.delete(),
-            'reviewingByUid': FieldValue.delete(),
-            'reviewingAt': FieldValue.delete(),
-          });
+      final isDisagree = _selectedDecision == 'disagree';
+
+      // If DISAGREE: keep the report open for other experts and create a discussion thread.
+      // If AGREE: complete normally.
+      final nowIso = DateTime.now().toIso8601String();
+
+      final requestUpdate = <String, dynamic>{
+        'status': isDisagree ? 'pending_review' : 'completed',
+        'expertReview': expertReview,
+        'reviewedAt': nowIso,
+        // Only set "final" expert fields on AGREE
+        if (!isDisagree) 'expertName': expertName,
+        if (!isDisagree) 'expertUid': user.uid,
+        // If disagree: keep unassigned so other experts can pick it up + notifications show for everyone
+        if (isDisagree) 'expertName': FieldValue.delete(),
+        if (isDisagree) 'expertUid': FieldValue.delete(),
+        'reviewingBy': FieldValue.delete(),
+        'reviewingByUid': FieldValue.delete(),
+        'reviewingAt': FieldValue.delete(),
+      };
+
+      await FirebaseFirestore.instance.collection('scan_requests').doc(docId).update(requestUpdate);
+
+      if (isDisagree) {
+        // Create / update expert discussion for this report
+        final req = widget.request;
+        final userName = (req['userName'] ?? 'Farmer').toString();
+        final summary = (req['diseaseSummary'] as List?) ?? const [];
+        // Keep title consistent across screens: prefer non-healthy if present.
+        final diseaseLabel = PigDiseaseUI.dominantLabelFromSummary(
+          summary,
+          preferNonHealthy: true,
+        );
+
+        final discRef = FirebaseFirestore.instance.collection('expert_discussions').doc(docId);
+        final batch = FirebaseFirestore.instance.batch();
+        batch.set(discRef, {
+          'requestId': docId,
+          'createdAt': FieldValue.serverTimestamp(),
+          'createdByUid': user.uid,
+          'createdByName': expertName,
+          'status': 'open',
+          'userName': userName,
+          'diseaseLabel': diseaseLabel,
+          'lastMessageText': expertReview['comment'].toString().isEmpty
+              ? 'Disagreed — needs expert discussion.'
+              : expertReview['comment'],
+          'lastMessageAt': FieldValue.serverTimestamp(),
+          'decisions': {user.uid: 'disagree'},
+          // Track participants so other experts can see who is involved.
+          'participantUids': FieldValue.arrayUnion([user.uid]),
+          'participants': {user.uid: expertName},
+        }, SetOptions(merge: true));
+        batch.set(discRef.collection('messages').doc(), {
+          'text': expertReview['comment'].toString().isEmpty
+              ? 'Disagreed — needs expert discussion.'
+              : expertReview['comment'],
+          'senderUid': user.uid,
+          'senderName': expertName,
+          'sentAt': FieldValue.serverTimestamp(),
+          'type': 'system',
+        });
+        await batch.commit();
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -331,10 +299,8 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
         );
         Navigator.pop(context, {
           ...widget.request,
-          'status': 'completed',
+          'status': _selectedDecision == 'disagree' ? 'pending_review' : 'completed',
           'expertReview': expertReview,
-          'expertName': expertName,
-          'expertUid': user.uid,
           'reviewedAt': DateTime.now().toIso8601String(),
         });
       }
@@ -361,22 +327,8 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
       // Initialize form with existing review data
       final review = widget.request['expertReview'];
       if (review != null) {
-        _selectedSeverity = review['severityAssessment']?['level'] ?? 'medium';
-        _commentController.text = review['comment'] ?? '';
-
-        final recommendations =
-            review['treatmentPlan']?['recommendations'] as List?;
-        if (recommendations != null && recommendations.isNotEmpty) {
-          final treatment = recommendations[0];
-          _treatmentController.text = treatment['treatment'] ?? '';
-          _dosageController.text = treatment['dosage'] ?? '';
-          _frequencyController.text = treatment['frequency'] ?? '';
-          _precautionsController.text = treatment['precautions'] ?? '';
-        }
-
-        _selectedPreventiveMeasures = List<String>.from(
-          review['treatmentPlan']?['preventiveMeasures'] ?? [],
-        );
+        _selectedDecision = (review['decision'] ?? '').toString();
+        _commentController.text = (review['comment'] ?? '').toString();
       }
     });
   }
@@ -387,25 +339,14 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
       // Reset form to original values
       final review = widget.request['expertReview'];
       if (review != null) {
-        _selectedSeverity = review['severityAssessment']?['level'] ?? 'medium';
-        _commentController.text = review['comment'] ?? '';
-
-        final recommendations =
-            review['treatmentPlan']?['recommendations'] as List?;
-        if (recommendations != null && recommendations.isNotEmpty) {
-          final treatment = recommendations[0];
-          _treatmentController.text = treatment['treatment'] ?? '';
-          _dosageController.text = treatment['dosage'] ?? '';
-          _frequencyController.text = treatment['frequency'] ?? '';
-          _precautionsController.text = treatment['precautions'] ?? '';
-        }
-
-        _selectedPreventiveMeasures = List<String>.from(
-          review['treatmentPlan']?['preventiveMeasures'] ?? [],
-        );
+        _selectedDecision = (review['decision'] ?? '').toString();
+        _commentController.text = (review['comment'] ?? '').toString();
       }
     });
   }
+
+  // Expert-only decision (agree/disagree)
+  String _selectedDecision = 'agree';
 
   Widget _buildImageGrid() {
     final images = widget.request['images'] as List<dynamic>;
@@ -626,9 +567,8 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        detections.isNotEmpty
-                            ? '${detections.length} Detections'
-                            : 'No Detections',
+                        // No count UI for experts (requested).
+                        '',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 12,
@@ -927,63 +867,67 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
     }
   }
 
-  // Helper to merge disease summary entries with the same disease
-  List<Map<String, dynamic>> _mergeDiseaseSummary(List<dynamic> summary) {
-    final Map<String, Map<String, dynamic>> merged = {};
-    for (final entry in summary) {
-      final disease = entry['label'] ?? entry['disease'] ?? entry['name'];
-      final count = entry['count'] ?? 0;
-      final percentage = entry['percentage'] ?? 0.0;
-      if (!merged.containsKey(disease)) {
-        merged[disease] = {
-          'disease': disease,
-          'count': count,
-          'percentage': percentage,
-        };
-      } else {
-        merged[disease]!['count'] += count;
-        merged[disease]!['percentage'] += percentage;
+  /// Returns per-disease avg/max confidence for this report.
+  /// Prefers request.diseaseSummary.{avgConfidence,maxConfidence,label}; falls back to image detections.
+  List<Map<String, dynamic>> _getDiseaseConfidenceSummary() {
+    final rawSummary = widget.request['diseaseSummary'] as List<dynamic>? ?? const [];
+
+    final fromSummary = <Map<String, dynamic>>[];
+    for (final e in rawSummary) {
+      if (e is! Map) continue;
+      final avg = (e['avgConfidence'] as num?)?.toDouble();
+      if (avg == null) continue;
+      final mx = (e['maxConfidence'] as num?)?.toDouble() ?? avg;
+      final label = (e['label'] ?? e['disease'] ?? e['name'] ?? 'unknown').toString();
+      fromSummary.add({'label': label, 'avgConfidence': avg, 'maxConfidence': mx});
+    }
+    if (fromSummary.isNotEmpty) return fromSummary;
+
+    final images = widget.request['images'] as List<dynamic>? ?? const [];
+    final Map<String, double> sum = {};
+    final Map<String, int> n = {};
+    final Map<String, double> max = {};
+    for (final img in images) {
+      if (img is! Map) continue;
+      final results = img['results'] as List<dynamic>? ?? const [];
+      for (final r in results) {
+        if (r is! Map) continue;
+        final rawLabel = (r['disease'] ?? r['label'] ?? 'unknown').toString();
+        final conf = (r['confidence'] as num?)?.toDouble();
+        if (conf == null) continue;
+        final key = PigDiseaseUI.normalizeKey(rawLabel);
+        sum[key] = (sum[key] ?? 0) + conf;
+        n[key] = (n[key] ?? 0) + 1;
+        final prev = max[key] ?? 0.0;
+        if (conf > prev) max[key] = conf;
       }
     }
-    return merged.values.toList();
+    final out = <Map<String, dynamic>>[];
+    for (final entry in n.entries) {
+      final key = entry.key;
+      final cnt = entry.value;
+      if (cnt <= 0) continue;
+      final avg = (sum[key] ?? 0.0) / cnt;
+      out.add({'label': key, 'avgConfidence': avg, 'maxConfidence': max[key] ?? avg});
+    }
+    return out;
   }
 
   Widget _buildDiseaseSummary() {
-    final rawSummary = widget.request['diseaseSummary'] as List<dynamic>? ?? [];
-    final diseaseSummary = _mergeDiseaseSummary(rawSummary);
-    final totalLeaves = diseaseSummary.fold<int>(
-      0,
-      (sum, disease) => sum + (disease['count'] as int? ?? 0),
-    );
-
-    // Sort diseases by percentage in descending order
-    final sortedDiseases =
-        diseaseSummary.toList()..sort((a, b) {
-          final percentageA =
-              (a['count'] as int? ?? 0) / (totalLeaves == 0 ? 1 : totalLeaves);
-          final percentageB =
-              (b['count'] as int? ?? 0) / (totalLeaves == 0 ? 1 : totalLeaves);
-          return percentageB.compareTo(percentageA);
-        });
-
-    // Filter out healthy and unknown detections
-    final actualDiseases =
-        sortedDiseases.where((d) {
-          final disease = d['disease']?.toString() ?? '';
-          final isHealthy = disease.toLowerCase() == 'healthy';
-          final isUnknown = _isUnknownDetection(disease);
-          return !isHealthy && !isUnknown;
-        }).toList();
+    final stats = _getDiseaseConfidenceSummary();
+    final sortedDiseases = stats.toList()
+      ..sort((a, b) {
+        final aAvg = (a['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+        final bAvg = (b['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+        return bAvg.compareTo(aAvg);
+      });
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Detection Summary',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
+        const Text('Report Results', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        // Compact table view
+        // Compact table view (avg confidence only; no counts)
         Card(
           child: Column(
             children: [
@@ -1015,7 +959,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                     Expanded(
                       flex: 1,
                       child: Text(
-                        'Count',
+                        'Avg %',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.grey[700],
@@ -1026,7 +970,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                     Expanded(
                       flex: 1,
                       child: Text(
-                        '%',
+                        'Max %',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: Colors.grey[700],
@@ -1039,14 +983,14 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
               ),
               // Table rows
               ...sortedDiseases.map((disease) {
-                final rawDiseaseName =
-                    disease['disease']?.toString() ?? 'Unknown';
-                final isUnknown = _isUnknownDetection(rawDiseaseName);
-                final diseaseName =
-                    isUnknown ? 'Unknown' : _formatExpertLabel(rawDiseaseName);
-                final color = _getDiseaseColor(rawDiseaseName);
-                final count = disease['count'] as int? ?? 0;
-                final percentage = totalLeaves == 0 ? 0.0 : count / totalLeaves;
+                final rawLabel = (disease['label'] ?? 'unknown').toString();
+                final isUnknown = _isUnknownDetection(rawLabel);
+                final diseaseName = isUnknown ? 'Unknown' : _formatExpertLabel(rawLabel);
+                final color = _getDiseaseColor(rawLabel);
+                final avg = (disease['avgConfidence'] as num?)?.toDouble();
+                final mx = (disease['maxConfidence'] as num?)?.toDouble();
+                final avgPct = (avg ?? 0.0) * 100;
+                final maxPct = (mx ?? avg ?? 0.0) * 100;
 
                 return Container(
                   decoration: BoxDecoration(
@@ -1055,12 +999,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                     ),
                   ),
                   child: InkWell(
-                    onTap:
-                        () => _showDetectionDetails(
-                          context,
-                          rawDiseaseName,
-                          count,
-                        ),
+                    onTap: null,
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -1096,7 +1035,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                           Expanded(
                             flex: 1,
                             child: Text(
-                              '$count',
+                              '${avgPct.toStringAsFixed(1)}',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
@@ -1107,7 +1046,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                           Expanded(
                             flex: 1,
                             child: Text(
-                              '${(percentage * 100).toStringAsFixed(1)}%',
+                              '${maxPct.toStringAsFixed(1)}%',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontWeight: FontWeight.w500,
@@ -1124,428 +1063,24 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        // Summary statistics
-        Row(
-          children: [
-            Expanded(
-              child: _buildStatCard(
-                'Total Detections',
-                '$totalLeaves',
-                Icons.analytics,
-                Colors.blue,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildStatCard(
-                'Diseases Found',
-                '${actualDiseases.length}',
-                Icons.warning,
-                Colors.orange,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _buildStatCard(
-                'Images Analyzed',
-                '${widget.request['images']?.length ?? 0}',
-                Icons.image,
-                Colors.purple,
-              ),
-            ),
-          ],
-        ),
+        // Removed: count-based summary stats for experts (requested)
       ],
     );
   }
 
-  void _showHealthyStatus(BuildContext context) {
-    final images = widget.request['images'] as List<dynamic>? ?? [];
-    final healthyDetections = <Map<String, dynamic>>[];
+  // Removed: _showHealthyStatus (expert flow no longer reviews "healthy" stats)
 
-    // Collect all healthy detections
-    for (int i = 0; i < images.length; i++) {
-      final image = images[i];
-      final results = image['results'] as List<dynamic>? ?? [];
-      for (final result in results) {
-        if (result != null &&
-            result['disease']?.toString().toLowerCase() == 'healthy') {
-          healthyDetections.add({
-            'imageIndex': i,
-            'imageUrl': image['imageUrl'],
-            'imagePath': image['path'],
-            'confidence': result['confidence'],
-            'boundingBox': result['boundingBox'],
-          });
-        }
-      }
-    }
+  // Removed: _showDetectionDetails (expert flow no longer drills into counts)
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.7,
-            minChildSize: 0.5,
-            maxChildSize: 0.95,
-            expand: false,
-            builder:
-                (context, scrollController) => SingleChildScrollView(
-                  controller: scrollController,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.check_circle,
-                              color: Colors.green,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 12),
-                            const Expanded(
-                              child: Text(
-                                'Healthy Leaves',
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        // Healthy detection statistics
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildDetectionStatCard(
-                                'Healthy Detections',
-                                '${healthyDetections.length}',
-                                Icons.check_circle,
-                                Colors.green,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildDetectionStatCard(
-                                'Avg Confidence',
-                                healthyDetections.isNotEmpty
-                                    ? '${(healthyDetections.map((d) => d['confidence'] as num).reduce((a, b) => a + b) / healthyDetections.length * 100).toStringAsFixed(1)}%'
-                                    : 'N/A',
-                                Icons.trending_up,
-                                Colors.green,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        const Text(
-                          'Healthy Leaf Detections',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        if (healthyDetections.isNotEmpty)
-                          ...healthyDetections.map((detection) {
-                            final confidence = detection['confidence'] as num;
-                            final imageIndex = detection['imageIndex'] as int;
-
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              child: ListTile(
-                                leading: CircleAvatar(
-                                  backgroundColor: Colors.green.withOpacity(
-                                    0.2,
-                                  ),
-                                  child: Text(
-                                    '${(confidence * 100).toStringAsFixed(0)}%',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.green,
-                                    ),
-                                  ),
-                                ),
-                                title: Text('Image ${imageIndex + 1}'),
-                                subtitle: Text(
-                                  'Confidence: ${(confidence * 100).toStringAsFixed(1)}%',
-                                  style: const TextStyle(
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.visibility, size: 20),
-                                  onPressed: () => _openImageViewer(imageIndex),
-                                  tooltip: 'View image',
-                                ),
-                              ),
-                            );
-                          }).toList()
-                        else
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(20),
-                              child: Text(
-                                'No healthy leaf detections found.',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-          ),
-    );
-  }
-
-  void _showDetectionDetails(
-    BuildContext context,
-    String diseaseName,
-    int count,
-  ) {
-    final images = widget.request['images'] as List<dynamic>? ?? [];
-    final detections = <Map<String, dynamic>>[];
-
-    // Collect all detections for this disease
-    for (int i = 0; i < images.length; i++) {
-      final image = images[i];
-      final results = image['results'] as List<dynamic>? ?? [];
-      for (final result in results) {
-        if (result != null && result['disease']?.toString() == diseaseName) {
-          detections.add({
-            'imageIndex': i,
-            'imageUrl': image['imageUrl'],
-            'imagePath': image['path'],
-            'confidence': result['confidence'],
-            'boundingBox': result['boundingBox'],
-          });
-        }
-      }
-    }
-
-    // Sort by image index for easier review
-    detections.sort(
-      (a, b) => (a['imageIndex'] as int).compareTo(b['imageIndex'] as int),
-    );
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder:
-          (context) => DraggableScrollableSheet(
-            initialChildSize: 0.8,
-            minChildSize: 0.5,
-            maxChildSize: 0.95,
-            expand: false,
-            builder:
-                (context, scrollController) => SingleChildScrollView(
-                  controller: scrollController,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 24,
-                              height: 24,
-                              decoration: BoxDecoration(
-                                color: _getDiseaseColor(
-                                  diseaseName,
-                                ).withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.analytics,
-                                  size: 16,
-                                  color: _getDiseaseColor(diseaseName),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                '${_isUnknownDetection(diseaseName) ? 'Unknown' : _formatExpertLabel(diseaseName)} Detections',
-                                style: const TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.close),
-                              onPressed: () => Navigator.pop(context),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        // Detection statistics
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildDetectionStatCard(
-                                'Total Detections',
-                                '$count',
-                                Icons.analytics,
-                                Colors.blue,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildDetectionStatCard(
-                                'Images Affected',
-                                '${detections.map((d) => d['imageIndex']).toSet().length}',
-                                Icons.image,
-                                Colors.blue,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _buildDetectionStatCard(
-                                'Detection Quality',
-                                detections.length > 1 ? 'Multiple' : 'Single',
-                                Icons.analytics,
-                                detections.length > 1
-                                    ? Colors.orange
-                                    : Colors.green,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        const Text(
-                          'Individual Detections',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        // List of detections
-                        ...detections.map((detection) {
-                          final imageIndex = detection['imageIndex'] as int;
-                          final color = _getDiseaseColor(diseaseName);
-
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: color.withOpacity(0.2),
-                                child: Text(
-                                  '${imageIndex + 1}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: color,
-                                  ),
-                                ),
-                              ),
-                              title: Text('Image ${imageIndex + 1}'),
-                              subtitle: Text(
-                                'Detection found',
-                                style: TextStyle(
-                                  color: Colors.grey[600],
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.visibility,
-                                      size: 20,
-                                    ),
-                                    onPressed:
-                                        () => _openImageViewer(imageIndex),
-                                    tooltip: 'View image',
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        if (detections.isEmpty)
-                          const Center(
-                            child: Padding(
-                              padding: EdgeInsets.all(20),
-                              child: Text(
-                                'No detections found for this disease.',
-                                style: TextStyle(color: Colors.grey),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-          ),
-    );
-  }
-
-  Widget _buildDetectionStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            Text(
-              title,
-              style: TextStyle(fontSize: 10, color: Colors.grey[600]),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // Removed: _buildDetectionStatCard (no longer used in simplified expert flow)
 
   Widget _buildReviewForm() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Expert Review',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-        ),
+        const Text('Expert Review', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
         const SizedBox(height: 16),
-        // Severity Assessment
+        // Decision + optional comment only
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1553,144 +1088,62 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Severity Assessment',
+                  'Decision',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: _selectedSeverity,
-                  decoration: const InputDecoration(
-                    labelText: 'Select Severity Level',
-                    border: OutlineInputBorder(),
-                  ),
-                  items:
-                      ['low', 'medium', 'high']
-                          .map(
-                            (level) => DropdownMenuItem(
-                              value: level,
-                              child: Text(level.toUpperCase()),
-                            ),
-                          )
-                          .toList(),
-                  onChanged: (value) {
-                    setState(() {
-                      _selectedSeverity = value!;
-                    });
-                  },
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => setState(() => _selectedDecision = 'agree'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              _selectedDecision == 'agree' ? Colors.green : Colors.grey[200],
+                          foregroundColor:
+                              _selectedDecision == 'agree' ? Colors.white : Colors.black87,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: const Text('Agree'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _isSubmitting
+                            ? null
+                            : () => setState(() => _selectedDecision = 'disagree'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              _selectedDecision == 'disagree' ? Colors.red : Colors.grey[200],
+                          foregroundColor:
+                              _selectedDecision == 'disagree' ? Colors.white : Colors.black87,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        icon: const Icon(Icons.cancel_outlined),
+                        label: const Text('Disagree'),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Treatment Plan
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
+                const SizedBox(height: 14),
                 const Text(
-                  'Treatment Plan',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _treatmentController,
-                  decoration: const InputDecoration(
-                    labelText: 'Recommended Treatment (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _dosageController,
-                  decoration: const InputDecoration(
-                    labelText: 'Dosage (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _frequencyController,
-                  decoration: const InputDecoration(
-                    labelText: 'Application Frequency (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: _precautionsController,
-                  maxLines: 2,
-                  decoration: const InputDecoration(
-                    labelText: 'Precautions (Optional)',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Preventive Measures
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Preventive Measures (Optional)',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children:
-                      _preventiveMeasures.map((measure) {
-                        final isSelected = _selectedPreventiveMeasures.contains(
-                          measure,
-                        );
-                        return FilterChip(
-                          label: Text(measure),
-                          selected: isSelected,
-                          onSelected: (selected) {
-                            setState(() {
-                              if (selected) {
-                                _selectedPreventiveMeasures.add(measure);
-                              } else {
-                                _selectedPreventiveMeasures.remove(measure);
-                              }
-                            });
-                          },
-                        );
-                      }).toList(),
-                ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Expert Comment
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Expert Comment',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  'Comment (optional)',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _commentController,
                   maxLines: 4,
                   decoration: const InputDecoration(
-                    labelText: 'Expert Comment *',
-                    hintText:
-                        'Enter your analysis and recommendations... (Required)',
+                    hintText: 'Add a short note for the farmer (optional)...',
                     border: OutlineInputBorder(),
                   ),
                 ),
@@ -1722,7 +1175,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                       ),
                     )
                     : const Text(
-                      'Submit Review',
+                      'Submit Decision',
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -1764,12 +1217,8 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
       );
     }
 
-    final severity = review['severityAssessment']?['level'] ?? 'medium';
-    final recommendations =
-        review['treatmentPlan']?['recommendations'] as List?;
-    final preventiveMeasures =
-        review['treatmentPlan']?['preventiveMeasures'] as List?;
-    final comment = review['comment'] ?? '';
+    final decision = (review['decision'] ?? '').toString();
+    final comment = (review['comment'] ?? '').toString();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1789,7 +1238,6 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
           ],
         ),
         const SizedBox(height: 16),
-        // Severity Assessment
         Card(
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -1797,121 +1245,30 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Severity Assessment',
+                  'Decision',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
                 Row(
                   children: [
-                    Icon(Icons.warning, color: _getSeverityColor(severity)),
+                    Icon(
+                      decision == 'disagree' ? Icons.cancel_outlined : Icons.check_circle_outline,
+                      color: decision == 'disagree' ? Colors.red : Colors.green,
+                    ),
                     const SizedBox(width: 8),
                     Text(
-                      severity.toString().toUpperCase(),
+                      decision == 'disagree' ? 'Disagree' : 'Agree',
                       style: TextStyle(
-                        color: _getSeverityColor(severity),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: decision == 'disagree' ? Colors.red : Colors.green,
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Treatment Plan
-        if (recommendations != null && recommendations.isNotEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+                if (comment.trim().isNotEmpty) ...[
+                  const SizedBox(height: 14),
                   const Text(
-                    'Treatment Plan',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  ...recommendations.map((treatment) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        if (treatment['treatment'] != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text(
-                              'Treatment: ${treatment['treatment']}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        if (treatment['dosage'] != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text('Dosage: ${treatment['dosage']}'),
-                          ),
-                        if (treatment['frequency'] != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text('Frequency: ${treatment['frequency']}'),
-                          ),
-                        if (treatment['precautions'] != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Text(
-                              'Precautions: ${treatment['precautions']}',
-                            ),
-                          ),
-                        const SizedBox(height: 8),
-                      ],
-                    );
-                  }).toList(),
-                ],
-              ),
-            ),
-          ),
-        const SizedBox(height: 16),
-        // Preventive Measures
-        if (preventiveMeasures != null && preventiveMeasures.isNotEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Preventive Measures',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children:
-                        preventiveMeasures.map<Widget>((measure) {
-                          return Chip(
-                            label: Text(measure.toString()),
-                            backgroundColor: Colors.green.withOpacity(0.1),
-                          );
-                        }).toList(),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        const SizedBox(height: 16),
-        // Expert Comment
-        if (comment.isNotEmpty)
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Expert Comment',
+                    'Comment',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
@@ -1920,9 +1277,10 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                     style: const TextStyle(fontSize: 15, color: Colors.black87),
                   ),
                 ],
-              ),
+              ],
             ),
           ),
+        ),
       ],
     );
   }
@@ -1937,68 +1295,11 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
         lowerName.contains('tip burn');
   }
 
-  Color _getDiseaseColor(String diseaseName) {
-    final Map<String, Color> diseaseColors = {
-      'anthracnose': Colors.orange,
-      'bacterial_blackspot': Colors.purple,
-      'bacterial blackspot': Colors.purple,
-      'bacterial black spot': Colors.purple,
-      'backterial_blackspot': Colors.purple,
-      'dieback': Colors.red,
-      'healthy': Color.fromARGB(255, 2, 119, 252),
-      'powdery_mildew': Color.fromARGB(255, 9, 46, 2),
-      'powdery mildew': Color.fromARGB(255, 9, 46, 2),
-      'tip_burn': Colors.brown,
-      'tip burn': Colors.brown,
-      'unknown': Colors.brown,
-    };
-    return diseaseColors[diseaseName.toLowerCase()] ?? Colors.grey;
-  }
+  Color _getDiseaseColor(String diseaseName) => PigDiseaseUI.colorFor(diseaseName);
 
-  Color _getSeverityColor(String severity) {
-    switch (severity.toLowerCase()) {
-      case 'high':
-        return Colors.red;
-      case 'medium':
-        return Colors.orange;
-      case 'low':
-        return Colors.green;
-      default:
-        return Colors.grey;
-    }
-  }
+  // Removed: _getSeverityColor (no severity in simplified expert flow)
 
-  Widget _buildStatCard(
-    String title,
-    String value,
-    IconData icon,
-    Color color,
-  ) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 20),
-            const SizedBox(height: 4),
-            Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: color,
-              ),
-            ),
-            Text(
-              title,
-              style: TextStyle(fontSize: 12, color: Colors.grey[600]),
-              textAlign: TextAlign.center,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // Removed: _buildStatCard (count UI not needed for experts)
 
   Future<Size> _getImageSize(ImageProvider provider) async {
     final Completer<Size> completer = Completer();
@@ -2192,29 +1493,5 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
     );
   }
 
-  String _formatExpertLabel(String label) {
-    switch (label.toLowerCase()) {
-      case 'backterial_blackspot':
-      case 'bacterial blackspot':
-      case 'bacterial black spot':
-        return 'Bacterial black spot';
-      case 'powdery_mildew':
-      case 'powdery mildew':
-        return 'Powdery Mildew';
-      case 'tip_burn':
-      case 'tip burn':
-        return 'Unknown';
-      default:
-        return label
-            .replaceAll('_', ' ')
-            .split(' ')
-            .map(
-              (word) =>
-                  word.isNotEmpty
-                      ? word[0].toUpperCase() + word.substring(1)
-                      : '',
-            )
-            .join(' ');
-    }
-  }
+  String _formatExpertLabel(String label) => PigDiseaseUI.displayName(label);
 }

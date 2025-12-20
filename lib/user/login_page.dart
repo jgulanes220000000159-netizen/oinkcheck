@@ -26,9 +26,20 @@ class _LoginPageState extends State<LoginPage> {
 
   // Email/password only (Google sign-in removed).
 
+  // DEV convenience: prefill password to reduce switching friction.
+  // Remove before release.
+  static const String _defaultPassword = '@Sherwen24';
+
+  @override
+  void initState() {
+    super.initState();
+    _passwordController.text = _defaultPassword;
+  }
+
   String _normalizeRole(dynamic role) {
     final r = (role ?? '').toString().trim().toLowerCase();
-    if (r == 'head_veterinarian' || r == 'head veterinarian') return 'veterinarian';
+    if (r == 'head_veterinarian' || r == 'head veterinarian')
+      return 'veterinarian';
     return r;
   }
 
@@ -101,7 +112,7 @@ class _LoginPageState extends State<LoginPage> {
 
           if (userDoc.exists) {
             final data = userDoc.data() as Map<String, dynamic>;
-          final role = _normalizeRole(data['role']);
+            final role = _normalizeRole(data['role']);
             final status = data['status'];
 
             // Debug: Print user data to console
@@ -115,28 +126,33 @@ class _LoginPageState extends State<LoginPage> {
               String roleText = role == 'expert' ? 'expert' : 'farmer';
               String statusText = status ?? 'inactive';
               String statusMessage = '';
-              
+
               // Create friendly status messages
               switch (statusText) {
                 case 'pending':
-                  statusMessage = 'Your $roleText account is pending approval. You will receive an email notification once your account is approved by an administrator.';
+                  statusMessage =
+                      'Your $roleText account is pending approval. You will receive an email notification once your account is approved by an administrator.';
                   break;
                 case 'rejected':
                 case 'declined':
-                  statusMessage = 'Your $roleText account has been declined. Please contact support for more information.';
+                  statusMessage =
+                      'Your $roleText account has been declined. Please contact support for more information.';
                   break;
                 case 'suspended':
                 case 'banned':
-                  statusMessage = 'Your $roleText account has been suspended. Please contact support for assistance.';
+                  statusMessage =
+                      'Your $roleText account has been suspended. Please contact support for assistance.';
                   break;
                 default:
-                  statusMessage = 'Your $roleText account is currently $statusText. Please contact support for assistance.';
+                  statusMessage =
+                      'Your $roleText account is currently $statusText. Please contact support for assistance.';
               }
-              
+
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
                   content: Text(statusMessage),
-                  backgroundColor: statusText == 'pending' ? Colors.orange : Colors.red,
+                  backgroundColor:
+                      statusText == 'pending' ? Colors.orange : Colors.red,
                   duration: const Duration(seconds: 5),
                 ),
               );
@@ -289,7 +305,8 @@ class _LoginPageState extends State<LoginPage> {
             backgroundColor = Colors.red;
             break;
           case 'too-many-requests':
-            message = 'Too many failed login attempts. Please try again later or reset your password.';
+            message =
+                'Too many failed login attempts. Please try again later or reset your password.';
             backgroundColor = Colors.orange;
             break;
           case 'network-request-failed':
@@ -298,16 +315,19 @@ class _LoginPageState extends State<LoginPage> {
             backgroundColor = Colors.orange;
             break;
           case 'operation-not-allowed':
-            message = 'Email/password sign-in is not enabled. Please contact support.';
+            message =
+                'Email/password sign-in is not enabled. Please contact support.';
             backgroundColor = Colors.red;
             break;
           case 'weak-password':
-            message = 'Password is too weak. Please choose a stronger password.';
+            message =
+                'Password is too weak. Please choose a stronger password.';
             backgroundColor = Colors.orange;
             break;
           default:
             // Show the actual error code for debugging purposes
-            message = 'Login failed: ${e.code}. Please try again or contact support.';
+            message =
+                'Login failed: ${e.code}. Please try again or contact support.';
             backgroundColor = Colors.red;
         }
 
@@ -382,7 +402,10 @@ class _LoginPageState extends State<LoginPage> {
             width: 1.2,
           ),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
       );
     }
 
@@ -446,220 +469,234 @@ class _LoginPageState extends State<LoginPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                          const SizedBox(height: 6),
-                          const Center(
-                            child: Text(
-                              'OinkCheck',
-                              style: TextStyle(
-                                color: brandGreen,
-                                fontSize: 26,
-                                fontWeight: FontWeight.w700,
+                            const SizedBox(height: 6),
+                            const Center(
+                              child: Text(
+                                'OinkCheck',
+                                style: TextStyle(
+                                  color: brandGreen,
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Center(
-                            child: Text(
-                              'Sign in to continue.',
-                              style: TextStyle(
-                                color: Colors.black38,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
+                            const SizedBox(height: 6),
+                            const Center(
+                              child: Text(
+                                'Sign in to continue.',
+                                style: TextStyle(
+                                  color: Colors.black38,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 22),
+                            const SizedBox(height: 22),
 
-                          // NAME
-                          label('NAME'),
-                          TextField(
-                            key: const ValueKey('textfield_email'),
-                            controller: _emailController,
-                            style: const TextStyle(
-                              color: Colors.black87,
-                              fontSize: 14,
+                            // NAME
+                            label('NAME'),
+                            TextField(
+                              key: const ValueKey('textfield_email'),
+                              controller: _emailController,
+                              style: const TextStyle(
+                                color: Colors.black87,
+                                fontSize: 14,
+                              ),
+                              keyboardType: TextInputType.emailAddress,
+                              onChanged: (value) {
+                                if (_hasValidated) {
+                                  setState(() {
+                                    _fieldErrors['email'] =
+                                        value.trim().isEmpty
+                                            ? 'Please enter your email'
+                                            : null;
+                                  });
+                                }
+                              },
+                              decoration: fieldDecoration(
+                                hint: 'username or email',
+                                hasError:
+                                    _hasValidated &&
+                                    _fieldErrors['email'] != null,
+                              ),
                             ),
-                            keyboardType: TextInputType.emailAddress,
-                            onChanged: (value) {
-                              if (_hasValidated) {
-                                setState(() {
-                                  _fieldErrors['email'] =
-                                      value.trim().isEmpty ? 'Please enter your email' : null;
-                                });
-                              }
-                            },
-                            decoration: fieldDecoration(
-                              hint: 'username or email',
-                              hasError: _hasValidated && _fieldErrors['email'] != null,
-                            ),
-                          ),
-                          if (_hasValidated &&
-                              _fieldErrors['email'] != null &&
-                              _fieldErrors['email']!.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6, left: 6),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  _fieldErrors['email']!,
-                                  style: const TextStyle(
-                                    color: Colors.redAccent,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
+                            if (_hasValidated &&
+                                _fieldErrors['email'] != null &&
+                                _fieldErrors['email']!.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6, left: 6),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    _fieldErrors['email']!,
+                                    style: const TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
 
-                          const SizedBox(height: 14),
+                            const SizedBox(height: 14),
 
-                          // PASSWORD
-                          label('PASSWORD'),
-                          TextField(
-                            key: const ValueKey('textfield_password'),
-                            controller: _passwordController,
-                            obscureText: true, // match reference (no eye icon)
-                            style: const TextStyle(
-                              color: Colors.black87,
-                              fontSize: 14,
+                            // PASSWORD
+                            label('PASSWORD'),
+                            TextField(
+                              key: const ValueKey('textfield_password'),
+                              controller: _passwordController,
+                              obscureText:
+                                  true, // match reference (no eye icon)
+                              style: const TextStyle(
+                                color: Colors.black87,
+                                fontSize: 14,
+                              ),
+                              onChanged: (value) {
+                                if (_hasValidated) {
+                                  setState(() {
+                                    _fieldErrors['password'] =
+                                        value.trim().isEmpty
+                                            ? 'Please enter your password'
+                                            : null;
+                                  });
+                                }
+                              },
+                              decoration: fieldDecoration(
+                                hint: '••••••••',
+                                hasError:
+                                    _hasValidated &&
+                                    _fieldErrors['password'] != null,
+                              ),
                             ),
-                            onChanged: (value) {
-                              if (_hasValidated) {
-                                setState(() {
-                                  _fieldErrors['password'] =
-                                      value.trim().isEmpty ? 'Please enter your password' : null;
-                                });
-                              }
-                            },
-                            decoration: fieldDecoration(
-                              hint: '••••••••',
-                              hasError: _hasValidated && _fieldErrors['password'] != null,
-                            ),
-                          ),
-                          if (_hasValidated &&
-                              _fieldErrors['password'] != null &&
-                              _fieldErrors['password']!.isNotEmpty)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 6, left: 6),
-                              child: Align(
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  _fieldErrors['password']!,
-                                  style: const TextStyle(
-                                    color: Colors.redAccent,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w500,
+                            if (_hasValidated &&
+                                _fieldErrors['password'] != null &&
+                                _fieldErrors['password']!.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 6, left: 6),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    _fieldErrors['password']!,
+                                    style: const TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
                                 ),
                               ),
+
+                            const SizedBox(height: 18),
+
+                            // Login Button
+                            SizedBox(
+                              width: double.infinity,
+                              height: 46,
+                              child: ElevatedButton(
+                                onPressed: _isLoading ? null : _handleLogin,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: brandGreen,
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                ),
+                                child:
+                                    _isLoading
+                                        ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ),
+                                          ),
+                                        )
+                                        : const Text(
+                                          'Log in',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                              ),
                             ),
 
-                          const SizedBox(height: 18),
+                            const SizedBox(height: 10),
 
-                          // Login Button
-                          SizedBox(
-                            width: double.infinity,
-                            height: 46,
-                            child: ElevatedButton(
-                              onPressed: _isLoading ? null : _handleLogin,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: brandGreen,
-                                foregroundColor: Colors.white,
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10),
+                            // Forgot Password
+                            TextButton(
+                              onPressed:
+                                  () => _showForgotPasswordDialog(context),
+                              child: const Text(
+                                'Forgot Password?',
+                                style: TextStyle(
+                                  color: Colors.black38,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
                                 ),
                               ),
-                              child: _isLoading
-                                  ? const SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(Colors.white),
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Log in',
+                            ),
+
+                            const SizedBox(height: 2),
+
+                            // Bottom links
+                            Center(
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder:
+                                              (context) => const RegisterPage(),
+                                        ),
+                                      );
+                                    },
+                                    child: const Text(
+                                      'Signup !',
                                       style: TextStyle(
-                                        fontSize: 15,
+                                        color: brandGreen,
                                         fontWeight: FontWeight.w600,
+                                        fontSize: 14,
                                       ),
                                     ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          // Forgot Password
-                          TextButton(
-                            onPressed: () => _showForgotPasswordDialog(context),
-                            child: const Text(
-                              'Forgot Password?',
-                              style: TextStyle(
-                                color: Colors.black38,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
+                                  ),
+                                  const SizedBox(width: 18),
+                                  TextButton.icon(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder:
+                                              (context) => const AboutAppPage(),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.info_outline,
+                                      color: brandGreen,
+                                      size: 18,
+                                    ),
+                                    label: const Text(
+                                      'About',
+                                      style: TextStyle(
+                                        color: brandGreen,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-
-                          const SizedBox(height: 2),
-
-                          // Bottom links
-                          Center(
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                TextButton(
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) =>
-                                            const RegisterPage(),
-                                      ),
-                                    );
-                                  },
-                                  child: const Text(
-                                    'Signup !',
-                                    style: TextStyle(
-                                      color: brandGreen,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 18),
-                                TextButton.icon(
-                                  onPressed: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (context) => const AboutAppPage(),
-                                      ),
-                                    );
-                                  },
-                                  icon: const Icon(
-                                    Icons.info_outline,
-                                    color: brandGreen,
-                                    size: 18,
-                                  ),
-                                  label: const Text(
-                                    'About',
-                                    style: TextStyle(
-                                      color: brandGreen,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                          ],
                         ),
                       ),
                     ),
@@ -842,5 +879,3 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 }
-
-

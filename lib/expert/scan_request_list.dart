@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:hive/hive.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:easy_localization/easy_localization.dart';
+import '../shared/pig_disease_ui.dart';
 
 class ScanRequestList extends StatefulWidget {
   final int initialTabIndex;
@@ -75,7 +76,9 @@ class _ScanRequestListState extends State<ScanRequestList>
     final pendingQuery =
         await FirebaseFirestore.instance
             .collection('scan_requests')
-            .where('status', whereIn: ['pending', 'pending_review'])
+            // IMPORTANT: Only show truly unreviewed items in Pending.
+            // If an expert already made a decision, we move it to discussion (pending_review).
+            .where('status', whereIn: ['pending'])
             .get();
     final completedQuery =
         await FirebaseFirestore.instance
@@ -149,15 +152,8 @@ class _ScanRequestListState extends State<ScanRequestList>
   }
 
   String _formatDiseaseName(String disease) {
-    // Convert snake_case to Title Case and replace underscores with spaces
-    final normalized = disease.replaceAll('_', ' ').toLowerCase();
-    if (normalized == 'tip burn' || normalized == 'unknown') {
-      return 'Unknown';
-    }
-    return disease
-        .split('_')
-        .map((word) => word[0].toUpperCase() + word.substring(1))
-        .join(' ');
+    // Keep naming consistent with bounding boxes + other screens.
+    return PigDiseaseUI.displayName(disease);
   }
 
   Widget _buildSearchBar() {
@@ -342,9 +338,7 @@ class _ScanRequestListState extends State<ScanRequestList>
                   // Mark pending as seen when expert opens it
                   final id =
                       (request['id'] ?? request['requestId'] ?? '').toString();
-                  if ((request['status'] == 'pending' ||
-                          request['status'] == 'pending_review') &&
-                      id.isNotEmpty) {
+                  if ((request['status'] == 'pending') && id.isNotEmpty) {
                     await _markPendingSeen(id);
                   }
                   final updatedRequest = await Navigator.push(
@@ -508,8 +502,7 @@ class _ScanRequestListState extends State<ScanRequestList>
                         ),
                       ),
                     ),
-                    if ((request['status'] == 'pending' ||
-                        request['status'] == 'pending_review')) ...[
+                    if (request['status'] == 'pending') ...[
                       const SizedBox(height: 4),
                       // Show locked badge if being reviewed by someone else
                       if (isLockedByOther)
@@ -643,8 +636,7 @@ class _ScanRequestListState extends State<ScanRequestList>
                                             ),
                                             const SizedBox(height: 20),
                                             Text(
-                                              tr('cannot_delete') ??
-                                                  'Cannot Delete',
+                                              tr('cannot_delete'),
                                               style: const TextStyle(
                                                 fontSize: 20,
                                                 fontWeight: FontWeight.bold,
@@ -652,8 +644,7 @@ class _ScanRequestListState extends State<ScanRequestList>
                                             ),
                                             const SizedBox(height: 12),
                                             Text(
-                                              tr('cannot_delete_missing_id') ??
-                                                  'Unable to delete: missing document ID.',
+                                              tr('cannot_delete_missing_id'),
                                               textAlign: TextAlign.center,
                                               style: TextStyle(
                                                 fontSize: 14,
@@ -918,8 +909,7 @@ class _ScanRequestListState extends State<ScanRequestList>
                                               ),
                                               const SizedBox(height: 20),
                                               Text(
-                                                tr('session_deleted') ??
-                                                    'Successfully Deleted',
+                                                tr('session_deleted'),
                                                 style: const TextStyle(
                                                   fontSize: 20,
                                                   fontWeight: FontWeight.bold,
@@ -927,8 +917,7 @@ class _ScanRequestListState extends State<ScanRequestList>
                                               ),
                                               const SizedBox(height: 12),
                                               Text(
-                                                tr('request_deleted_permanently') ??
-                                                    'The request has been permanently deleted from the system.',
+                                                tr('request_deleted_permanently'),
                                                 textAlign: TextAlign.center,
                                                 style: TextStyle(
                                                   fontSize: 14,
@@ -1115,7 +1104,7 @@ class _ScanRequestListState extends State<ScanRequestList>
           allRequests
               .where(
                 (r) =>
-                    r['status'] == 'pending' || r['status'] == 'pending_review',
+                    r['status'] == 'pending',
               )
               .toList(),
         );

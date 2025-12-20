@@ -9,6 +9,7 @@ import 'package:easy_localization/easy_localization.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'user_request_detail.dart';
+import '../shared/pig_disease_ui.dart';
 
 class UserRequestList extends StatefulWidget {
   final List<Map<String, dynamic>> requests;
@@ -216,27 +217,12 @@ class _UserRequestListState extends State<UserRequestList> {
   }
 
   Widget _buildRequestCard(Map<String, dynamic> request) {
-    final diseaseSummary = (request['diseaseSummary'] as List?) ?? [];
-
-    // Find the dominant disease (highest count/percentage)
-    String dominantDisease = 'Unknown';
-    if (diseaseSummary.isNotEmpty) {
-      // Sort by count to find the dominant disease
-      final sortedDiseases = List<Map<String, dynamic>>.from(diseaseSummary);
-      sortedDiseases.sort((a, b) {
-        final countA = a['count'] as int? ?? 0;
-        final countB = b['count'] as int? ?? 0;
-        return countB.compareTo(countA); // Descending order
-      });
-
-      final dominantDiseaseData = sortedDiseases.first;
-      dominantDisease =
-          (dominantDiseaseData['name'] ??
-                  dominantDiseaseData['disease'] ??
-                  dominantDiseaseData['label'] ??
-                  'Unknown')
-              .toString();
-    }
+    // Prefer avgConfidence from diseaseSummary; fallback to computing from detections.
+    final dominant = _getDominantDiseaseByAvgConfidence(request);
+    final dominantLabel = dominant['label'] as String;
+    final dominantAvg = dominant['avgConfidence'] as double;
+    final dominantName = PigDiseaseUI.displayName(dominantLabel);
+    final dominantColor = PigDiseaseUI.colorFor(dominantLabel);
     final status = request['status']?.toString() ?? 'pending';
     final submittedAt = request['submittedAt']?.toString() ?? '';
     // Format date
@@ -249,7 +235,6 @@ class _UserRequestListState extends State<UserRequestList> {
     final isCompleted = status == 'completed' || status == 'reviewed';
     final images = (request['images'] as List?) ?? [];
     final totalImages = images.length;
-    final totalDetections = diseaseSummary.length;
     // Use imageUrl if present and not empty, else imagePath, else path
     final imageUrl = images.isNotEmpty ? (images[0]['imageUrl'] ?? '') : '';
     final imagePath =
@@ -307,11 +292,33 @@ class _UserRequestListState extends State<UserRequestList> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _formatExpertLabel(dominantDisease),
+                          dominantName,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: dominantColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Avg ${(dominantAvg * 100).toStringAsFixed(1)}%',
+                              style: TextStyle(
+                                color: Colors.grey[700],
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                         Text(
                           formattedDate,
@@ -427,8 +434,7 @@ class _UserRequestListState extends State<UserRequestList> {
                                         ),
                                         const SizedBox(height: 20),
                                         Text(
-                                          tr('cannot_delete') ??
-                                              'Cannot Delete',
+                                          tr('cannot_delete'),
                                           style: const TextStyle(
                                             fontSize: 20,
                                             fontWeight: FontWeight.bold,
@@ -436,8 +442,7 @@ class _UserRequestListState extends State<UserRequestList> {
                                         ),
                                         const SizedBox(height: 12),
                                         Text(
-                                          tr('cannot_delete_missing_id') ??
-                                              'Unable to delete: missing document ID.',
+                                          tr('cannot_delete_missing_id'),
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                             fontSize: 14,
@@ -510,8 +515,7 @@ class _UserRequestListState extends State<UserRequestList> {
                                       ),
                                       const SizedBox(height: 20),
                                       Text(
-                                        tr('delete_report_title') ??
-                                            'Delete Request?',
+                                        tr('delete_report_title'),
                                         style: const TextStyle(
                                           fontSize: 20,
                                           fontWeight: FontWeight.bold,
@@ -519,8 +523,7 @@ class _UserRequestListState extends State<UserRequestList> {
                                       ),
                                       const SizedBox(height: 12),
                                       Text(
-                                        tr('delete_report_confirm') ??
-                                            'This action cannot be undone. The pending request will be permanently deleted.',
+                                        tr('delete_report_confirm'),
                                         textAlign: TextAlign.center,
                                         style: TextStyle(
                                           fontSize: 14,
@@ -549,7 +552,7 @@ class _UserRequestListState extends State<UserRequestList> {
                                                 ),
                                               ),
                                               child: Text(
-                                                tr('cancel') ?? 'Cancel',
+                                                tr('cancel'),
                                                 style: TextStyle(
                                                   fontSize: 16,
                                                   fontWeight: FontWeight.w600,
@@ -579,7 +582,7 @@ class _UserRequestListState extends State<UserRequestList> {
                                                 elevation: 0,
                                               ),
                                               child: Text(
-                                                tr('delete') ?? 'Delete',
+                                                tr('delete'),
                                                 style: const TextStyle(
                                                   fontSize: 16,
                                                   fontWeight: FontWeight.w600,
@@ -741,12 +744,8 @@ class _UserRequestListState extends State<UserRequestList> {
                                         const SizedBox(height: 20),
                                         Text(
                                           imageDeleteError
-                                              ? tr(
-                                                    'session_deleted_with_errors',
-                                                  ) ??
-                                                  'Deleted with Warnings'
-                                              : tr('session_deleted') ??
-                                                  'Successfully Deleted',
+                                              ? tr('session_deleted_with_errors')
+                                              : tr('session_deleted'),
                                           style: const TextStyle(
                                             fontSize: 20,
                                             fontWeight: FontWeight.bold,
@@ -755,14 +754,8 @@ class _UserRequestListState extends State<UserRequestList> {
                                         const SizedBox(height: 12),
                                         Text(
                                           imageDeleteError
-                                              ? tr(
-                                                    'session_deleted_with_errors',
-                                                  ) ??
-                                                  'The request has been deleted, but some images could not be removed from storage.'
-                                              : tr(
-                                                    'request_deleted_permanently',
-                                                  ) ??
-                                                  'The request has been permanently deleted from the system.',
+                                              ? tr('session_deleted_with_errors')
+                                              : tr('request_deleted_permanently'),
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                             fontSize: 14,
@@ -841,10 +834,9 @@ class _UserRequestListState extends State<UserRequestList> {
                                         ),
                                         const SizedBox(height: 20),
                                         Text(
-                                          tr(
-                                                'failed_to_delete_session',
-                                              )?.split(':').first ??
-                                              'Delete Failed',
+                                          tr('failed_to_delete_session')
+                                              .split(':')
+                                              .first,
                                           style: const TextStyle(
                                             fontSize: 20,
                                             fontWeight: FontWeight.bold,
@@ -853,10 +845,9 @@ class _UserRequestListState extends State<UserRequestList> {
                                         const SizedBox(height: 12),
                                         Text(
                                           tr(
-                                                'failed_to_delete_session',
-                                                namedArgs: {'error': '$e'},
-                                              ) ??
-                                              'An error occurred while deleting the request:\n$e',
+                                            'failed_to_delete_session',
+                                            namedArgs: {'error': '$e'},
+                                          ),
                                           textAlign: TextAlign.center,
                                           style: TextStyle(
                                             fontSize: 14,
@@ -914,9 +905,9 @@ class _UserRequestListState extends State<UserRequestList> {
                   Container(width: 1, height: 40, color: Colors.grey[300]),
                   Expanded(
                     child: _buildStatItem(
-                      tr('detections'),
-                      totalDetections.toString(),
-                      Icons.search,
+                      'Avg confidence',
+                      '${(dominantAvg * 100).toStringAsFixed(1)}%',
+                      Icons.insights,
                     ),
                   ),
                 ],
@@ -954,6 +945,62 @@ class _UserRequestListState extends State<UserRequestList> {
         ],
       ),
     );
+  }
+
+  /// Returns {'label': <model label>, 'avgConfidence': <0..1> }.
+  /// Uses request.diseaseSummary.avgConfidence when present, else computes from detections.
+  Map<String, Object> _getDominantDiseaseByAvgConfidence(
+    Map<String, dynamic> request,
+  ) {
+    final diseaseSummary = (request['diseaseSummary'] as List?) ?? [];
+    if (diseaseSummary.isNotEmpty) {
+      double best = -1;
+      String bestLabel = 'unknown';
+      for (final e in diseaseSummary) {
+        if (e is! Map) continue;
+        final avg = (e['avgConfidence'] as num?)?.toDouble();
+        if (avg == null) continue;
+        final label =
+            (e['label'] ?? e['disease'] ?? e['name'] ?? 'unknown').toString();
+        if (avg > best) {
+          best = avg;
+          bestLabel = label;
+        }
+      }
+      if (best >= 0) {
+        return {'label': bestLabel, 'avgConfidence': best};
+      }
+    }
+
+    // Fallback: compute from detections stored under images[].results[]
+    final images = (request['images'] as List?) ?? [];
+    final Map<String, double> sum = {};
+    final Map<String, int> n = {};
+    for (final img in images) {
+      if (img is! Map) continue;
+      final results = (img['results'] as List?) ?? const [];
+      for (final d in results) {
+        if (d is! Map) continue;
+        final raw = (d['disease'] ?? d['label'] ?? 'unknown').toString();
+        final conf = (d['confidence'] as num?)?.toDouble();
+        if (conf == null) continue;
+        final key = PigDiseaseUI.normalizeKey(raw);
+        sum[key] = (sum[key] ?? 0) + conf;
+        n[key] = (n[key] ?? 0) + 1;
+      }
+    }
+    double best = -1;
+    String bestLabel = 'unknown';
+    sum.forEach((k, v) {
+      final cnt = n[k] ?? 0;
+      if (cnt <= 0) return;
+      final avg = v / cnt;
+      if (avg > best) {
+        best = avg;
+        bestLabel = k;
+      }
+    });
+    return {'label': bestLabel, 'avgConfidence': best < 0 ? 0.0 : best};
   }
 }
 
@@ -1009,34 +1056,4 @@ Widget _buildImageWidget(
 bool _isFilePath(String path) {
   // Heuristic: treat as file path if it is absolute or starts with /data/ or C:/ or similar
   return path.startsWith('/') || path.contains(':');
-}
-
-String _formatExpertLabel(String label) {
-  // Keep consistent with the current pig model classes.
-  // (Importing shared UI here is not worth it for this small helper.)
-  final key = label.toLowerCase().trim().replaceAll(' ', '_');
-  switch (key) {
-    case 'healthy':
-      return 'Healthy';
-    case 'infected_bacterial_erysipelas':
-      return 'Bacterial Erysipelas';
-    case 'infected_bacterial_greasy':
-      return 'Greasy Pig Disease';
-    case 'infected_environmental_sunburn':
-      return 'Sunburn';
-    case 'infected_fungal_ringworm':
-      return 'Ringworm';
-    case 'infected_parasitic_mange':
-      return 'Mange';
-    case 'infected_viral_foot_and_mouth':
-      return 'Foot-and-Mouth Disease';
-    case 'swine_pox':
-      return 'Swine Pox';
-    default:
-      return key
-          .split('_')
-          .where((w) => w.isNotEmpty)
-          .map((w) => w[0].toUpperCase() + w.substring(1))
-          .join(' ');
-  }
 }

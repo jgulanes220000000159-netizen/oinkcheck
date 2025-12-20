@@ -81,6 +81,64 @@ class PigDiseaseUI {
             .join(' ');
     }
   }
+
+  /// Picks a single "dominant" disease label from a stored `diseaseSummary`.
+  ///
+  /// Why: Many screens need one title label. If `healthy` is present alongside
+  /// an infected disease, we usually want to display the infected disease as
+  /// the main focus (preferNonHealthy=true).
+  ///
+  /// Supports older `diseaseSummary` formats:
+  /// - count-based: { label, count }
+  /// - confidence-based: { label, avgConfidence } / { label, maxConfidence }
+  static String dominantLabelFromSummary(
+    List<dynamic>? diseaseSummary, {
+    bool preferNonHealthy = true,
+  }) {
+    if (diseaseSummary == null || diseaseSummary.isEmpty) return 'unknown';
+
+    final rows = <Map<String, dynamic>>[];
+    for (final e in diseaseSummary) {
+      if (e is! Map) continue;
+      final m = Map<String, dynamic>.from(e);
+      final label =
+          (m['label'] ?? m['disease'] ?? m['name'] ?? 'unknown').toString();
+      if (label.trim().isEmpty) continue;
+      rows.add({'label': label, ...m});
+    }
+    if (rows.isEmpty) return 'unknown';
+
+    bool hasCount = false;
+    bool hasAvg = false;
+    bool hasMax = false;
+    for (final r in rows) {
+      if (r['count'] is num) hasCount = true;
+      if (r['avgConfidence'] is num) hasAvg = true;
+      if (r['maxConfidence'] is num) hasMax = true;
+    }
+
+    double metric(Map<String, dynamic> r) {
+      if (hasCount) return (r['count'] as num?)?.toDouble() ?? 0.0;
+      if (hasAvg) return (r['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+      if (hasMax) return (r['maxConfidence'] as num?)?.toDouble() ?? 0.0;
+      return 0.0;
+    }
+
+    // Prefer a non-healthy label if it exists.
+    if (preferNonHealthy) {
+      final nonHealthy = rows.where((r) {
+        final key = normalizeKey((r['label'] ?? '').toString());
+        return key.isNotEmpty && key != 'healthy' && key != 'unknown';
+      }).toList();
+      if (nonHealthy.isNotEmpty) {
+        nonHealthy.sort((a, b) => metric(b).compareTo(metric(a)));
+        return (nonHealthy.first['label'] ?? 'unknown').toString();
+      }
+    }
+
+    rows.sort((a, b) => metric(b).compareTo(metric(a)));
+    return (rows.first['label'] ?? 'unknown').toString();
+  }
 }
 
 

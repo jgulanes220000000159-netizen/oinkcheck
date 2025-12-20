@@ -159,17 +159,12 @@ void main() {
         ),
       );
 
-      // Load saved locale from Hive
-      final settingsBox = Hive.box('settings');
-      String? localeCode = settingsBox.get('locale_code');
-      Locale? startLocale;
-      if (localeCode != null && ['en', 'bs', 'tl'].contains(localeCode)) {
-        startLocale = Locale(localeCode);
-      }
+      // English-only (no language switching)
+      const Locale startLocale = Locale('en');
 
       runApp(
         EasyLocalization(
-          supportedLocales: const [Locale('en'), Locale('bs'), Locale('tl')],
+          supportedLocales: const [Locale('en')],
           path: 'assets/lang',
           fallbackLocale: const Locale('en'),
           startLocale: startLocale,

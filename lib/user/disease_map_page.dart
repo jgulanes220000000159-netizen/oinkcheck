@@ -238,14 +238,20 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                     child: FlutterMap(
                       mapController: _mapController,
                       options: MapOptions(
+                        // Ensure tiles render immediately without requiring a manual drag.
+                        initialCenter: _davaoDelNorteBounds.center,
+                        initialZoom: 9.0,
                         onMapReady: () {
                           // Force zoom to Davao del Norte province on open.
-                          _mapController.fitCamera(
-                            CameraFit.bounds(
-                              bounds: _davaoDelNorteBounds,
-                              padding: const EdgeInsets.all(32),
-                            ),
-                          );
+                          // Delay one microtask to ensure the map has a size before fitting.
+                          Future.microtask(() {
+                            _mapController.fitCamera(
+                              CameraFit.bounds(
+                                bounds: _davaoDelNorteBounds,
+                                padding: const EdgeInsets.all(32),
+                              ),
+                            );
+                          });
                         },
                         minZoom: 5.0,
                         maxZoom: 18.0,

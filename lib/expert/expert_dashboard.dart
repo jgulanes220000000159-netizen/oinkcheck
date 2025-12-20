@@ -11,6 +11,7 @@ import 'package:hive/hive.dart';
 import 'dart:async'; // Added for StreamSubscription
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'expert_chat_inbox_page.dart';
 
 class ExpertDashboard extends StatefulWidget {
   const ExpertDashboard({Key? key}) : super(key: key);
@@ -60,44 +61,44 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
     try {
       final user = FirebaseAuth.instance.currentUser;
       if (user == null) return;
-      FirebaseFirestore.instance.collection('scan_requests').snapshots().listen(
-        (snapshot) async {
-          final pendingIds = <String>{};
-          for (final doc in snapshot.docs) {
-            final data = doc.data();
-            final status = data['status'];
-            final expertUid = data['expertUid'];
-            final isPending = status == 'pending' || status == 'pending_review';
-            final isUnassigned =
-                expertUid == null || expertUid.toString().isEmpty;
-            final isAssignedToMe = expertUid == user.uid;
-            if (isPending && (isUnassigned || isAssignedToMe)) {
-              final id = (data['id'] ?? data['requestId'] ?? doc.id).toString();
-              if (id.isNotEmpty) pendingIds.add(id);
-            }
+      FirebaseFirestore.instance.collection('scan_requests').snapshots().listen((
+        snapshot,
+      ) async {
+        final pendingIds = <String>{};
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final status = data['status'];
+          final expertUid = data['expertUid'];
+          // Only count truly unreviewed items as notifications.
+          // Items moved to discussion use status 'pending_review' and should appear in Chatbox instead.
+          final isPending = status == 'pending';
+          final isUnassigned =
+              expertUid == null || expertUid.toString().isEmpty;
+          final isAssignedToMe = expertUid == user.uid;
+          if (isPending && (isUnassigned || isAssignedToMe)) {
+            final id = (data['id'] ?? data['requestId'] ?? doc.id).toString();
+            if (id.isNotEmpty) pendingIds.add(id);
           }
-          _lastPendingIds = pendingIds;
-          // Initialize baseline once so historical backlog doesn't count as new
-          final box = await Hive.openBox('expertRequestsSeenBox');
-          final bool baselineSet =
-              box.get('pendingBaselineSet', defaultValue: false) as bool;
-          final savedList = box.get('seenPendingIds', defaultValue: []);
-          if (!baselineSet && (savedList is List ? savedList.isEmpty : true)) {
-            await box.put('seenPendingIds', pendingIds.toList());
-            await box.put('pendingBaselineSet', true);
-          }
-          int unseen = await _computePendingUnseen();
-          _updateNotificationCount(unseen);
-          // Watch local seen set for immediate updates
-          _seenPendingWatch?.cancel();
-          _seenPendingWatch = box.watch(key: 'seenPendingIds').listen((
-            _,
-          ) async {
-            int unseen2 = await _computePendingUnseen();
-            _updateNotificationCount(unseen2);
-          });
-        },
-      );
+        }
+        _lastPendingIds = pendingIds;
+        // Initialize baseline once so historical backlog doesn't count as new
+        final box = await Hive.openBox('expertRequestsSeenBox');
+        final bool baselineSet =
+            box.get('pendingBaselineSet', defaultValue: false) as bool;
+        final savedList = box.get('seenPendingIds', defaultValue: []);
+        if (!baselineSet && (savedList is List ? savedList.isEmpty : true)) {
+          await box.put('seenPendingIds', pendingIds.toList());
+          await box.put('pendingBaselineSet', true);
+        }
+        int unseen = await _computePendingUnseen();
+        _updateNotificationCount(unseen);
+        // Watch local seen set for immediate updates
+        _seenPendingWatch?.cancel();
+        _seenPendingWatch = box.watch(key: 'seenPendingIds').listen((_) async {
+          int unseen2 = await _computePendingUnseen();
+          _updateNotificationCount(unseen2);
+        });
+      });
     } catch (_) {}
   }
 
@@ -295,7 +296,6 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
             ],
           ),
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               // Back button (only visible when not on home)
               if (_canGoBack())
@@ -333,55 +333,91 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
                 )
               else
                 const SizedBox.shrink(),
-              // Notification button
-              InkWell(
-                onTap: () {
-                  // Navigate to notifications/requests
-                  setState(() {
-                    _selectedIndex = 1;
-                  });
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Icon(Icons.notifications, color: Colors.green, size: 24),
-                      if (_pendingNotifications > 0)
-                        Positioned(
-                          right: -4,
-                          top: -4,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
-                            ),
-                            constraints: const BoxConstraints(
-                              minWidth: 18,
-                              minHeight: 18,
-                            ),
-                            child: Text(
-                              _pendingNotifications > 9
-                                  ? '9+'
-                                  : '$_pendingNotifications',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
+
+              const Spacer(),
+
+              // Right-side actions: Chat (left) then Notifications (far right)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ExpertChatInboxPage(),
                         ),
-                    ],
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.forum,
+                        color: Colors.green,
+                        size: 24,
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  InkWell(
+                    onTap: () {
+                      // Navigate to notifications/requests
+                      setState(() {
+                        _selectedIndex = 1;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          Icon(
+                            Icons.notifications,
+                            color: Colors.green,
+                            size: 24,
+                          ),
+                          if (_pendingNotifications > 0)
+                            Positioned(
+                              right: -4,
+                              top: -4,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                                constraints: const BoxConstraints(
+                                  minWidth: 18,
+                                  minHeight: 18,
+                                ),
+                                child: Text(
+                                  _pendingNotifications > 9
+                                      ? '9+'
+                                      : '$_pendingNotifications',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -886,7 +922,8 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
         final pendingQuery =
             await FirebaseFirestore.instance
                 .collection('scan_requests')
-                .where('status', whereIn: ['pending', 'pending_review'])
+                // IMPORTANT: discussions (pending_review) are handled in Chatbox, not Pending.
+                .where('status', whereIn: ['pending'])
                 .get();
 
         // Filter to show requests that are either assigned to this expert OR unassigned
@@ -1057,8 +1094,7 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
             final data = doc.data() as Map<String, dynamic>;
             final expertUid = data['expertUid'];
             // Show if assigned to this expert OR if no expert assigned yet
-            return (data['status'] == 'pending' ||
-                    data['status'] == 'pending_review') &&
+            return (data['status'] == 'pending') &&
                 (expertUid == null || expertUid == user.uid);
           }).toList();
 
@@ -1071,9 +1107,7 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
               .where(
                 (doc) =>
                     ((doc.data() as Map<String, dynamic>)['status'] ==
-                            'pending' ||
-                        (doc.data() as Map<String, dynamic>)['status'] ==
-                            'pending_review'),
+                        'pending'),
               )
               .toList();
       // print('Total pending requests in system: ${allPending.length}');

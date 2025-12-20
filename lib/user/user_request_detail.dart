@@ -8,6 +8,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'tflite_detector.dart';
 import 'detection_painter.dart';
 import '../shared/pig_disease_ui.dart';
+import '../shared/treatments_repository.dart';
 
 class UserRequestDetail extends StatefulWidget {
   final Map<String, dynamic> request;
@@ -19,6 +20,7 @@ class UserRequestDetail extends StatefulWidget {
 
 class _UserRequestDetailState extends State<UserRequestDetail> {
   bool _showBoundingBoxes = true;
+  static const double _recommendationAvgThreshold = 0.70;
 
   String _translatePreventiveMeasure(String english) {
     // Map known expert defaults to localization keys
@@ -88,6 +90,126 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
   void initState() {
     super.initState();
     _loadBoundingBoxPreference();
+  }
+
+  /// Returns per-disease avg/max confidence.
+  /// Prefers request.diseaseSummary.avgConfidence when present; falls back to image detections.
+  List<Map<String, dynamic>> _getDiseaseConfidenceSummary() {
+    final summary = (widget.request['diseaseSummary'] as List?) ?? const [];
+
+    final List<Map<String, dynamic>> fromSummary = [];
+    for (final e in summary) {
+      if (e is! Map) continue;
+      final avg = (e['avgConfidence'] as num?)?.toDouble();
+      final mx = (e['maxConfidence'] as num?)?.toDouble();
+      if (avg == null) continue;
+      final label =
+          (e['label'] ?? e['disease'] ?? e['name'] ?? 'unknown').toString();
+      fromSummary.add({
+        'label': label,
+        'avgConfidence': avg,
+        'maxConfidence': mx ?? avg,
+      });
+    }
+    if (fromSummary.isNotEmpty) return fromSummary;
+
+    // Fallback: compute from detections stored under images[].results[]
+    final images = (widget.request['images'] as List?) ?? const [];
+    final Map<String, double> sum = {};
+    final Map<String, int> n = {};
+    final Map<String, double> max = {};
+    for (final img in images) {
+      if (img is! Map) continue;
+      final results = (img['results'] as List?) ?? const [];
+      for (final d in results) {
+        if (d is! Map) continue;
+        final raw = (d['disease'] ?? d['label'] ?? 'unknown').toString();
+        final conf = (d['confidence'] as num?)?.toDouble();
+        if (conf == null) continue;
+        final key = PigDiseaseUI.normalizeKey(raw);
+        sum[key] = (sum[key] ?? 0) + conf;
+        n[key] = (n[key] ?? 0) + 1;
+        final prev = max[key] ?? 0.0;
+        if (conf > prev) max[key] = conf;
+      }
+    }
+    final out = <Map<String, dynamic>>[];
+    for (final entry in n.entries) {
+      final key = entry.key;
+      final cnt = entry.value;
+      if (cnt <= 0) continue;
+      final avg = (sum[key] ?? 0.0) / cnt;
+      out.add({
+        'label': key,
+        'avgConfidence': avg,
+        'maxConfidence': max[key] ?? avg,
+      });
+    }
+    return out;
+  }
+
+  void _showDiseaseRecommendations(BuildContext context, String label) {
+    final repo = TreatmentsRepository();
+    final diseaseId = PigDiseaseUI.treatmentIdForLabel(label);
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: Text(PigDiseaseUI.displayName(label)),
+          content: FutureBuilder(
+            future: repo.getPublicDoc(diseaseId),
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const SizedBox(
+                  height: 80,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snapshot.hasError) {
+                return Text('Failed to load recommendation: ${snapshot.error}');
+              }
+              final doc = snapshot.data;
+              if (doc == null || !doc.exists) {
+                return const Text('No approved treatments yet.');
+              }
+              final data = doc.data() ?? <String, dynamic>{};
+              final treatments = (data['treatments'] as List? ?? [])
+                  .map((e) => e.toString())
+                  .where((e) => e.trim().isNotEmpty)
+                  .toList();
+              if (treatments.isEmpty) {
+                return const Text('No approved treatments yet.');
+              }
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Recommended Treatments',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 10),
+                    ...treatments.map(
+                      (t) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Text('• $t'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   void _openImageViewer(int initialIndex) {
@@ -372,7 +494,6 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
   }
 
   Widget build(BuildContext context) {
-    final diseaseSummary = (widget.request['diseaseSummary'] as List?) ?? [];
     // Removed unused mainDisease variable
     final status = widget.request['status'] ?? '';
     final submittedAt = widget.request['submittedAt'] ?? '';
@@ -1376,21 +1497,11 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
               padding: const EdgeInsets.all(16),
               child: Builder(
                 builder: (context) {
-                  final mergedSummary = _mergeDiseaseSummary(diseaseSummary);
-                  final totalLeaves = mergedSummary.fold<int>(
-                    0,
-                    (sum, d) => sum + (d['count'] as int? ?? 0),
-                  );
-                  final sortedSummary = [...mergedSummary]..sort((a, b) {
-                    final percA =
-                        totalLeaves == 0
-                            ? 0.0
-                            : (a['count'] as int? ?? 0) / totalLeaves;
-                    final percB =
-                        totalLeaves == 0
-                            ? 0.0
-                            : (b['count'] as int? ?? 0) / totalLeaves;
-                    return percB.compareTo(percA);
+                  final stats = _getDiseaseConfidenceSummary();
+                  final sortedSummary = [...stats]..sort((a, b) {
+                    final aAvg = (a['avgConfidence'] as double?) ?? 0.0;
+                    final bAvg = (b['avgConfidence'] as double?) ?? 0.0;
+                    return bAvg.compareTo(aAvg);
                   });
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1403,16 +1514,15 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      ...sortedSummary.map<Widget>((disease) {
-                        final diseaseName =
-                            (disease['disease'] ?? disease['name'] ?? 'Unknown')
-                                .toString();
-                        final count = disease['count'] ?? 0;
-                        final percentage =
-                            totalLeaves == 0 ? 0.0 : count / totalLeaves;
-                        final color = _getExpertDiseaseColor(diseaseName);
-                        final isHealthy =
-                            diseaseName.toLowerCase() == 'healthy';
+                      ...sortedSummary.map<Widget>((d) {
+                        final label = (d['label'] ?? 'unknown').toString();
+                        final avg = (d['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+                        final mx = (d['maxConfidence'] as num?)?.toDouble() ?? avg;
+                        final color = _getExpertDiseaseColor(label);
+                        final isHealthy = PigDiseaseUI.normalizeKey(label) == 'healthy';
+                        final isUnknown = PigDiseaseUI.normalizeKey(label) == 'unknown';
+                        final canShowRecommendation =
+                            !isHealthy && !isUnknown && avg >= _recommendationAvgThreshold;
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           child: Padding(
@@ -1442,7 +1552,7 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                                     const SizedBox(width: 12),
                                     Expanded(
                                       child: Text(
-                                        _formatExpertLabel(diseaseName),
+                                        _formatExpertLabel(label),
                                         style: const TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.bold,
@@ -1459,10 +1569,7 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                                         borderRadius: BorderRadius.circular(20),
                                       ),
                                       child: Text(
-                                        tr(
-                                          'found_count',
-                                          namedArgs: {'count': '$count'},
-                                        ),
+                                        'Avg ${(avg * 100).toStringAsFixed(1)}%',
                                         style: TextStyle(
                                           color: color,
                                           fontWeight: FontWeight.bold,
@@ -1480,7 +1587,7 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            tr('percentage_of_total_leaves'),
+                                            'Average confidence',
                                             style: TextStyle(
                                               color: Colors.grey[600],
                                               fontSize: 14,
@@ -1492,7 +1599,7 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                                               10,
                                             ),
                                             child: LinearProgressIndicator(
-                                              value: percentage,
+                                              value: avg.clamp(0.0, 1.0),
                                               backgroundColor: color
                                                   .withOpacity(0.1),
                                               valueColor:
@@ -1507,7 +1614,7 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                                     ),
                                     const SizedBox(width: 12),
                                     Text(
-                                      '${(percentage * 100).toStringAsFixed(1)}%',
+                                      '${(avg * 100).toStringAsFixed(1)}%',
                                       style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.bold,
@@ -1516,6 +1623,36 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                                     ),
                                   ],
                                 ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  'Max confidence: ${(mx * 100).toStringAsFixed(1)}%',
+                                  style: TextStyle(color: Colors.grey[600], fontSize: 13),
+                                ),
+                                if (canShowRecommendation) ...[
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    child: OutlinedButton.icon(
+                                      onPressed: () =>
+                                          _showDiseaseRecommendations(context, label),
+                                      icon: Icon(
+                                        Icons.medical_services_outlined,
+                                        color: color,
+                                        size: 18,
+                                      ),
+                                      label: Text(
+                                        'See recommendation',
+                                        style: TextStyle(
+                                          color: color,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      style: OutlinedButton.styleFrom(
+                                        side: BorderSide(color: color.withOpacity(0.6)),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -1851,22 +1988,6 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
 
   Color _getExpertDiseaseColor(String diseaseName) {
     return PigDiseaseUI.colorFor(diseaseName);
-  }
-
-  List<Map<String, dynamic>> _mergeDiseaseSummary(List<dynamic> summary) {
-    final Map<String, Map<String, dynamic>> merged = {};
-    for (final entry in summary) {
-      final rawName = entry['disease'] ?? entry['name'] ?? 'Unknown';
-      final disease =
-          rawName.toString().toLowerCase().replaceAll('_', ' ').trim();
-      final count = entry['count'] ?? 0;
-      if (!merged.containsKey(disease)) {
-        merged[disease] = {'disease': rawName, 'count': count};
-      } else {
-        merged[disease]!['count'] += count;
-      }
-    }
-    return merged.values.toList();
   }
 
   Future<Size> _getImageSize(ImageProvider provider) async {

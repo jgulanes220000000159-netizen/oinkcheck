@@ -43,6 +43,10 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
   // Disease information loaded from Firestore
   Map<String, Map<String, dynamic>> _diseaseInfo = {};
 
+  /// If the *average confidence* for a disease is below this threshold,
+  /// we hide recommendations in the Analysis Summary (detections/boxes still show).
+  static const double _recommendationAvgThreshold = 0.70;
+
   @override
   void initState() {
     super.initState();
@@ -253,7 +257,9 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
         final file = await _compressIfOver30Mb(originalFile);
         final fileName =
             '${userId}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
-        final storagePath = 'leaf/$fileName';
+        // Firebase Storage doesn't require manually creating folders.
+        // The "folder" is just a prefix in the object path.
+        final storagePath = 'diseases/$fileName';
         final ref = FirebaseStorage.instance.ref().child(storagePath);
         final detectedMime = lookupMimeType(file.path) ?? 'image/jpeg';
         await ref.putFile(file, SettableMetadata(contentType: detectedMime));
@@ -293,7 +299,8 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
               'label': entry.key,
               'avgConfidence': avg,
               'maxConfidence': mx,
-              'count': cnt, // kept so existing pages (map/recent activity) won't break
+              'count':
+                  cnt, // kept so existing pages (map/recent activity) won't break
             };
           }).toList();
 
@@ -462,21 +469,24 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
     final color = DetectionPainter.diseaseColors[disease] ?? Colors.grey;
     final isHealthy = disease.toLowerCase() == 'healthy';
     final isUnknown = disease.toLowerCase() == 'unknown';
+    final canShowRecommendation =
+        !isHealthy &&
+        !isUnknown &&
+        avgConfidence >= _recommendationAvgThreshold;
 
     return Card(
       elevation: 4,
       margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: InkWell(
-        onTap: () {
-          if (isHealthy) {
-            _showHealthyStatus(context);
-          } else if (isUnknown) {
-            _showUnknownStatus(context);
-          } else {
-            _showDiseaseRecommendations(context, disease);
-          }
-        },
+        onTap:
+            isHealthy
+                ? () => _showHealthyStatus(context)
+                : isUnknown
+                ? () => _showUnknownStatus(context)
+                : canShowRecommendation
+                ? () => _showDiseaseRecommendations(context, disease)
+                : null,
         borderRadius: BorderRadius.circular(16),
         child: Container(
           padding: const EdgeInsets.all(16),
@@ -572,37 +582,39 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                 'Max confidence: ${(maxConfidence * 100).toStringAsFixed(1)}%',
                 style: TextStyle(color: Colors.grey[600], fontSize: 13),
               ),
-              const SizedBox(height: 12),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      isHealthy || isUnknown
-                          ? Icons.info_outline
-                          : Icons.medical_services_outlined,
-                      color: color,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      isHealthy || isUnknown
-                          ? tr('not_applicable')
-                          : tr('see_recommendation'),
-                      style: TextStyle(
+              if (isHealthy || isUnknown || canShowRecommendation) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        isHealthy || isUnknown
+                            ? Icons.info_outline
+                            : Icons.medical_services_outlined,
                         color: color,
-                        fontWeight: FontWeight.bold,
+                        size: 20,
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Text(
+                        isHealthy || isUnknown
+                            ? tr('not_applicable')
+                            : tr('see_recommendation'),
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -678,7 +690,8 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
       if (info == null) {
         // Handle common naming variations
         String normalizedLabel =
-            disease.toLowerCase()
+            disease
+                .toLowerCase()
                 .replaceAll('_', ' ') // Replace underscores with spaces
                 .replaceAll(
                   'blackspot',
@@ -690,9 +703,11 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
 
       // Special handling for bacterial black spot typo
       if (info == null &&
-          (diseaseId.contains('bacterial') || diseaseId.contains('backterial'))) {
+          (diseaseId.contains('bacterial') ||
+              diseaseId.contains('backterial'))) {
         // Try to match with the correct database key
-        if (diseaseId.contains('bacterial') || diseaseId.contains('backterial')) {
+        if (diseaseId.contains('bacterial') ||
+            diseaseId.contains('backterial')) {
           info = _diseaseInfo['Bacterial black spot'];
         }
       }
@@ -704,7 +719,8 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
               .toLowerCase()
               .replaceAll('_', ' ')
               .replaceAll('blackspot', 'black spot');
-          final normalizedLabel = disease.toLowerCase()
+          final normalizedLabel = disease
+              .toLowerCase()
               .replaceAll('_', ' ')
               .replaceAll('blackspot', 'black spot')
               .replaceAll('backterial', 'bacterial'); // Fix typo
@@ -825,10 +841,13 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                           FutureBuilder(
                             future: repo.getPublicDoc(diseaseId),
                             builder: (context, snap) {
-                              if (snap.connectionState == ConnectionState.waiting) {
+                              if (snap.connectionState ==
+                                  ConnectionState.waiting) {
                                 return const Padding(
                                   padding: EdgeInsets.symmetric(vertical: 12),
-                                  child: Center(child: CircularProgressIndicator()),
+                                  child: Center(
+                                    child: CircularProgressIndicator(),
+                                  ),
                                 );
                               }
                               if (snap.hasError) {
@@ -838,9 +857,12 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                                 );
                               }
                               final doc = snap.data;
-                              final data = doc != null && doc.exists ? doc.data() : null;
+                              final data =
+                                  doc != null && doc.exists ? doc.data() : null;
                               final treatments =
-                                  (data?['treatments'] as List? ?? []).map((e) => e.toString()).toList();
+                                  (data?['treatments'] as List? ?? [])
+                                      .map((e) => e.toString())
+                                      .toList();
                               if (treatments.isEmpty) {
                                 return const Text(
                                   'No approved treatments yet. Please wait for veterinarian approval.',
@@ -853,7 +875,10 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                                   ...treatments.map(
                                     (t) => Padding(
                                       padding: const EdgeInsets.only(bottom: 8),
-                                      child: Text('• $t', style: const TextStyle(fontSize: 15)),
+                                      child: Text(
+                                        '• $t',
+                                        style: const TextStyle(fontSize: 15),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -1300,7 +1325,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
         final file = await _compressIfOver30Mb(originalFile);
         final fileName =
             '${userId}_${DateTime.now().millisecondsSinceEpoch}_$i.jpg';
-        final storagePath = 'leaf/$fileName';
+        final storagePath = 'diseases/$fileName';
         final ref = FirebaseStorage.instance.ref().child(storagePath);
         final detectedMime = lookupMimeType(file.path) ?? 'image/jpeg';
         await ref.putFile(file, SettableMetadata(contentType: detectedMime));
@@ -1437,12 +1462,12 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
     }
 
     // Sort diseases by average confidence (descending)
-    final sortedDiseases = stats.entries.toList()
-      ..sort((a, b) {
-        final aAvg = (a.value['avg'] as double?) ?? 0.0;
-        final bAvg = (b.value['avg'] as double?) ?? 0.0;
-        return bAvg.compareTo(aAvg);
-      });
+    final sortedDiseases =
+        stats.entries.toList()..sort((a, b) {
+          final aAvg = (a.value['avg'] as double?) ?? 0.0;
+          final bAvg = (b.value['avg'] as double?) ?? 0.0;
+          return bAvg.compareTo(aAvg);
+        });
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
@@ -1772,8 +1797,10 @@ class _ImageCarouselViewerState extends State<_ImageCarouselViewer> {
                                       painter: DetectionPainter(
                                         results: results,
                                         originalImageSize: imageSize,
-                                        displayedImageSize:
-                                            Size(displayW, displayH),
+                                        displayedImageSize: Size(
+                                          displayW,
+                                          displayH,
+                                        ),
                                         displayedImageOffset: Offset.zero,
                                         debugMode: false,
                                       ),

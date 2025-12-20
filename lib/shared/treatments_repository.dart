@@ -54,6 +54,25 @@ class TreatmentsRepository {
   }) async {
     final user = _auth.currentUser;
     final submittedBy = user?.uid;
+
+    // Best-effort: attach expert display info to the proposal so veterinarians can see
+    // who submitted it without extra lookups.
+    String submittedByName = '';
+    String submittedByEmail = user?.email ?? '';
+    if (submittedBy != null) {
+      try {
+        final userDoc = await _db.collection('users').doc(submittedBy).get();
+        final u = userDoc.data();
+        if (u != null) {
+          submittedByName = (u['fullName'] ?? u['expertName'] ?? '').toString();
+          if (submittedByEmail.isEmpty) {
+            submittedByEmail = (u['email'] ?? '').toString();
+          }
+        }
+      } catch (_) {
+        // Ignore lookup errors; proposal can still be submitted.
+      }
+    }
     final data = <String, dynamic>{
       'diseaseId': diseaseId,
       'name': name,
@@ -63,6 +82,8 @@ class TreatmentsRepository {
       'imageUrl': imageUrl ?? '',
       'updatedAt': FieldValue.serverTimestamp(),
       'submittedBy': submittedBy,
+      'submittedByName': submittedByName,
+      'submittedByEmail': submittedByEmail,
     };
 
     // Helps with debugging and UI ordering even before serverTimestamp resolves.
@@ -84,6 +105,27 @@ class TreatmentsRepository {
       'submittedAtLocal': nowIso,
     });
     return ref.id;
+  }
+
+  /// Veterinarian-only edit of a pending proposal. Keeps the original `submittedBy`.
+  Future<void> vetEditPendingProposal({
+    required String proposalId,
+    required String name,
+    String? scientificName,
+    required List<String> treatments,
+    String? imageUrl,
+  }) async {
+    final vet = _auth.currentUser;
+    await _proposals.doc(proposalId).set({
+      'name': name,
+      'scientificName': scientificName ?? '',
+      'treatments': treatments,
+      if (imageUrl != null) 'imageUrl': imageUrl,
+      'status': 'pending',
+      'updatedAt': FieldValue.serverTimestamp(),
+      'vetEditedAt': FieldValue.serverTimestamp(),
+      'vetEditedBy': vet?.uid,
+    }, SetOptions(merge: true));
   }
 
   Future<void> approveProposal({
