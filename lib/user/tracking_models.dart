@@ -1,24 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:easy_localization/easy_localization.dart';
+import '../shared/pig_disease_ui.dart';
 
 class TrackingModels {
   // Use the same color mapping as DetectionPainter
-  static const Map<String, Color> diseaseColors = {
-    'anthracnose': Colors.orange,
-    'backterial_blackspot': Colors.purple,
-    'dieback': Colors.red,
-    'healthy': Color.fromARGB(255, 2, 119, 252),
-    'powdery_mildew': Color.fromARGB(255, 9, 46, 2),
-    'tip_burn': Colors.brown,
-    'Unknown': Colors.grey,
-  };
+  static const Map<String, Color> diseaseColors = PigDiseaseUI.diseaseColors;
 
   // List of real diseases (excluding tip burn/unknown)
   static const List<String> diseaseLabels = [
-    'anthracnose',
-    'backterial_blackspot',
-    'powdery_mildew',
-    'dieback',
+    'infected_bacterial_erysipelas',
+    'infected_bacterial_greasy',
+    'infected_environmental_sunburn',
+    'infected_fungal_ringworm',
+    'infected_parasitic_mange',
+    'infected_viral_foot_and_mouth',
+    'swine_pox',
   ];
 
   static const List<Map<String, dynamic>> timeRanges = [
@@ -28,7 +24,7 @@ class TrackingModels {
   ];
 
   static bool isRealDisease(String label) {
-    final l = label.toLowerCase();
+    final l = PigDiseaseUI.normalizeKey(label);
     return diseaseLabels.contains(l);
   }
 
@@ -67,24 +63,7 @@ class TrackingModels {
   }
 
   static String formatLabel(String label) {
-    switch (label.toLowerCase()) {
-      case 'backterial_blackspot':
-        return 'Bacterial black spot';
-      case 'powdery_mildew':
-        return 'Powdery Mildew';
-      case 'tip_burn':
-        return 'Tip Burn';
-      case 'healthy':
-        return 'Healthy';
-      case 'dieback':
-        return 'Dieback';
-      case 'anthracnose':
-        return 'Anthracnose';
-      default:
-        return label.isNotEmpty
-            ? label[0].toUpperCase() + label.substring(1)
-            : 'Unknown';
-    }
+    return PigDiseaseUI.displayName(label);
   }
 
   static List<Map<String, dynamic>> filterSessions(
@@ -170,7 +149,7 @@ class TrackingModels {
     for (final scan in scans) {
       final date = scan['date'] ?? '';
       final label = (scan['disease'] ?? '').toLowerCase();
-      if (date.isEmpty || label == 'tip_burn' || label == 'unknown') continue;
+      if (date.isEmpty || label == 'unknown') continue;
       final month = date.substring(0, 7); // 'YYYY-MM'
       result.putIfAbsent(
         month,
@@ -197,7 +176,7 @@ class TrackingModels {
     };
     for (final scan in scans) {
       final label = (scan['disease'] ?? '').toLowerCase();
-      if (label == 'tip_burn' || label == 'unknown') continue;
+      if (label == 'unknown') continue;
       if (label == 'healthy') {
         result['healthy'] = (result['healthy'] ?? 0) + 1;
       } else if (isRealDisease(label)) {

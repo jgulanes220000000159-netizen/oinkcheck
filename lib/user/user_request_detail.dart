@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'tflite_detector.dart';
 import 'detection_painter.dart';
+import '../shared/pig_disease_ui.dart';
 
 class UserRequestDetail extends StatefulWidget {
   final Map<String, dynamic> request;
@@ -1849,26 +1850,7 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
   }
 
   Color _getExpertDiseaseColor(String diseaseName) {
-    switch (diseaseName.toLowerCase()) {
-      case 'anthracnose':
-        return Colors.orange;
-      case 'backterial_blackspot':
-      case 'bacterial blackspot':
-      case 'bacterial black spot':
-        return Colors.purple;
-      case 'dieback':
-        return Colors.red;
-      case 'healthy':
-        return const Color.fromARGB(255, 2, 119, 252);
-      case 'powdery_mildew':
-      case 'powdery mildew':
-        return const Color.fromARGB(255, 9, 46, 2);
-      case 'tip_burn':
-      case 'tip burn':
-        return Colors.brown;
-      default:
-        return Colors.grey;
-    }
+    return PigDiseaseUI.colorFor(diseaseName);
   }
 
   List<Map<String, dynamic>> _mergeDiseaseSummary(List<dynamic> summary) {
@@ -1977,21 +1959,6 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
   }
 
   String _formatExpertLabel(String label) {
-    switch (label.toLowerCase()) {
-      case 'backterial_blackspot':
-      case 'bacterial blackspot':
-        return 'Bacterial black spot';
-      case 'powdery_mildew':
-      case 'powdery mildew':
-        return 'Powdery Mildew';
-      case 'tip_burn':
-      case 'tip burn':
-        return 'Unknown';
-      default:
-        return label
-            .split('_')
-            .map((word) => word[0].toUpperCase() + word.substring(1))
-            .join(' ');
-    }
+    return PigDiseaseUI.displayName(label);
   }
 }

@@ -1,7 +1,7 @@
 import 'dart:ui';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'tflite_detector.dart';
+import '../shared/pig_disease_ui.dart';
 
 class DetectionPainter extends CustomPainter {
   final List<DetectionResult> results;
@@ -11,17 +11,7 @@ class DetectionPainter extends CustomPainter {
   final bool debugMode;
 
   // Disease color map
-  static const Map<String, Color> diseaseColors = {
-    'anthracnose': Colors.orange,
-    'backterial_blackspot':
-        Colors.purple, // Keep original label for model compatibility
-    'dieback': Colors.red,
-    'healthy': Color.fromARGB(255, 2, 119, 252),
-    'powdery_mildew': Color.fromARGB(255, 9, 46, 2),
-    'tip_burn': Colors.brown,
-    // fallback color
-    'Unknown': Colors.grey,
-  };
+  static const Map<String, Color> diseaseColors = PigDiseaseUI.diseaseColors;
 
   DetectionPainter({
     required this.results,
@@ -32,19 +22,7 @@ class DetectionPainter extends CustomPainter {
   });
 
   String _formatLabel(String label) {
-    switch (label.toLowerCase()) {
-      case 'backterial_blackspot':
-        return 'Bacterial black spot';
-      case 'powdery_mildew':
-        return 'Powdery Mildew';
-      case 'tip_burn':
-        return 'Unknown';
-      default:
-        return label
-            .split('_')
-            .map((word) => word[0].toUpperCase() + word.substring(1))
-            .join(' ');
-    }
+    return PigDiseaseUI.displayName(label);
   }
 
   @override
@@ -67,7 +45,7 @@ class DetectionPainter extends CustomPainter {
     for (var result in results) {
       // Get the bounding box in original image space
       final box = result.boundingBox;
-      final color = diseaseColors[result.label] ?? diseaseColors['Unknown']!;
+      final color = PigDiseaseUI.colorFor(result.label);
 
       print('📦 Original box: $box for ${result.label} (${result.confidence})');
 

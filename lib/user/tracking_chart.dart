@@ -62,7 +62,7 @@ class TrackingChart {
       };
       for (final scan in scans) {
         final label = (scan['disease'] ?? '').toLowerCase();
-        if (label == 'tip_burn' || label == 'unknown') continue;
+        if (label == 'unknown') continue;
         final dateStr = scan['date'];
         if (dateStr == null) continue;
         final date = DateTime.tryParse(dateStr);
@@ -100,7 +100,7 @@ class TrackingChart {
 
       for (final scan in scans) {
         final label = (scan['disease'] ?? '').toLowerCase();
-        if (label == 'tip_burn' || label == 'unknown') continue;
+        if (label == 'unknown') continue;
         final dateStr = scan['date'];
         if (dateStr == null) continue;
         final date = DateTime.tryParse(dateStr);
@@ -144,7 +144,7 @@ class TrackingChart {
         };
         for (final scan in scans) {
           final label = (scan['disease'] ?? '').toLowerCase();
-          if (label == 'tip_burn' || label == 'unknown') continue;
+          if (label == 'unknown') continue;
           final dateStr = scan['date'];
           if (dateStr == null) continue;
           final date = DateTime.tryParse(dateStr);
@@ -176,7 +176,7 @@ class TrackingChart {
         );
         for (final scan in scans) {
           final label = (scan['disease'] ?? '').toLowerCase();
-          if (label == 'tip_burn' || label == 'unknown') continue;
+          if (label == 'unknown') continue;
           final dateStr = scan['date'];
           if (dateStr == null) continue;
           final date = DateTime.tryParse(dateStr);
@@ -210,7 +210,7 @@ class TrackingChart {
       };
       for (final scan in scans) {
         final label = (scan['disease'] ?? '').toLowerCase();
-        if (label == 'tip_burn' || label == 'unknown') continue;
+        if (label == 'unknown') continue;
         final dateStr = scan['date'];
         if (dateStr == null) continue;
         final date = DateTime.tryParse(dateStr);
@@ -233,7 +233,7 @@ class TrackingChart {
 
   // Percentage-based, fixed-bin aggregation (default 6 bins) across the selected range.
   // Each bin outputs per-disease percentages relative to total diseased counts
-  // (excludes healthy, tip_burn, and unknown). The label is the midpoint date (MM-dd).
+  // (excludes healthy and unknown). The label is the midpoint date (MM-dd).
   static List<Map<String, dynamic>> chartDataPercentBinned(
     List<Map<String, dynamic>> scans,
     int selectedRangeIndex, {
@@ -300,7 +300,7 @@ class TrackingChart {
 
     for (final scan in scans) {
       final label = (scan["disease"] ?? '').toLowerCase();
-      // We count healthy and real diseases; skip tip_burn/unknown
+      // We count healthy and real diseases; skip unknown
       if (label != 'healthy' && !TrackingModels.isRealDisease(label)) continue;
       final dateStr = scan['date'];
       if (dateStr == null) continue;

@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'tflite_detector.dart';
 import 'package:easy_localization/easy_localization.dart';
-import 'detection_painter.dart';
+import '../shared/pig_disease_ui.dart';
+import '../shared/treatments_repository.dart';
 
 class DetectionResultCard extends StatelessWidget {
   final DetectionResult result;
@@ -18,23 +19,11 @@ class DetectionResultCard extends StatelessWidget {
   }) : super(key: key);
 
   Color get diseaseColor {
-    return DetectionPainter.diseaseColors[result.label] ?? Colors.grey;
+    return PigDiseaseUI.colorFor(result.label);
   }
 
   String _formatLabel(String label) {
-    switch (label.toLowerCase()) {
-      case 'backterial_blackspot':
-        return 'Bacterial black spot';
-      case 'powdery_mildew':
-        return 'Powdery Mildew';
-      case 'tip_burn':
-        return 'Unknown';
-      default:
-        return label
-            .split('_')
-            .map((word) => word[0].toUpperCase() + word.substring(1))
-            .join(' ');
-    }
+    return PigDiseaseUI.displayName(label);
   }
 
   IconData _getSeverityIcon() {
@@ -45,77 +34,13 @@ class DetectionResultCard extends StatelessWidget {
     return Icons.info_outline;
   }
 
-  // Disease information (copied from homepage)
-  static const Map<String, Map<String, dynamic>> diseaseInfo = {
-    'anthracnose': {
-      'symptoms': [
-        'Irregular black or brown spots that expand and merge, leading to necrosis and leaf drop (Li et al., 2024).',
-      ],
-      'treatments': [
-        'Apply copper-based fungicides like copper oxychloride or Mancozeb during wet and humid conditions to prevent spore germination.',
-        'Prune mango trees regularly to improve air circulation and reduce humidity around foliage.',
-        'Remove and burn infected leaves to limit reinfection cycles.',
-      ],
-    },
-    'powdery_mildew': {
-      'symptoms': [
-        'A white, powdery fungal coating forms on young mango leaves, leading to distortion, yellowing, and reduced photosynthesis (Nasir, 2016).',
-      ],
-      'treatments': [
-        'Use sulfur-based or systemic fungicides like tebuconazole at the first sign of infection and repeat at 10–14-day intervals.',
-        'Avoid overhead irrigation which increases humidity and spore spread on leaf surfaces.',
-        'Remove heavily infected leaves to reduce fungal load.',
-      ],
-    },
-    'dieback': {
-      'symptoms': [
-        'Browning of leaf tips, followed by downward necrosis and eventual branch dieback (Ploetz, 2003).',
-      ],
-      'treatments': [
-        'Prune affected twigs at least 10 cm below the last symptom to halt pathogen progression.',
-        'Apply systemic fungicides such as carbendazim to protect surrounding healthy leaves.',
-        'Maintain plant vigor through balanced nutrition and irrigation to resist infection.',
-      ],
-    },
-    'backterial_blackspot': {
-      'symptoms': [
-        'Angular black lesions with yellow halos often appear along veins and can lead to early leaf drop (Ploetz, 2003).',
-      ],
-      'treatments': [
-        'Apply copper hydroxide or copper oxychloride sprays to suppress bacterial activity on the leaf surface.',
-        'Remove and properly dispose of infected leaves to reduce inoculum sources.',
-        'Avoid causing wounds on leaves during handling, as these can be entry points for bacteria.',
-      ],
-    },
-    'healthy': {
-      'symptoms': [
-        'Vibrant green leaves without spots or lesions',
-        'Normal growth pattern',
-        'No visible signs of disease or pest damage',
-      ],
-      'treatments': [
-        'Regular monitoring for early detection of problems',
-        'Maintain proper irrigation and fertilization',
-        'Practice good orchard sanitation',
-      ],
-    },
-    'tip_burn': {
-      'symptoms': [
-        'The tips and edges of leaves turn brown and dry, often due to non-pathogenic causes such as nutrient imbalance or salt injury (Gardening Know How, n.d.).',
-      ],
-      'treatments': [
-        'Ensure consistent, deep watering to avoid drought stress that can worsen tip burn symptoms.',
-        'Avoid excessive use of nitrogen-rich or saline fertilizers which may lead to root toxicity and leaf damage.',
-        'Supplement calcium or potassium via foliar feeding if nutrient deficiency is suspected.',
-        'Conduct regular soil testing to detect salinity or imbalance that might affect leaf health.',
-      ],
-    },
-  };
+  // Pig disease info is handled in the Treatments page; keep this card focused on scan results UI.
 
   void _showDiseaseRecommendations(BuildContext context) {
     final label = result.label.toLowerCase();
-    final info = diseaseInfo[label];
-    final isHealthy = label == 'healthy';
+    final isHealthy = PigDiseaseUI.normalizeKey(label) == 'healthy';
+    final isUnknown = PigDiseaseUI.normalizeKey(label) == 'unknown';
+    final repo = TreatmentsRepository();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -162,71 +87,60 @@ class DetectionResultCard extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 20),
-                        if (label == 'tip_burn') ...[
+                        const Text(
+                          'Treatment & Recommendations',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        if (isHealthy)
                           const Text(
-                            'Symptoms',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
+                            'No disease detected. Keep monitoring and maintain good hygiene.',
+                            style: TextStyle(fontSize: 15),
+                          )
+                        else if (isUnknown)
                           const Text(
-                            'N/A',
-                            style: TextStyle(fontSize: 15, color: Colors.grey),
+                            'No recommendation available for Unknown. Please rescan with clearer images.',
+                            style: TextStyle(fontSize: 15),
+                          )
+                        else
+                          FutureBuilder(
+                            future: repo.getPublicDoc(PigDiseaseUI.treatmentIdForLabel(label)),
+                            builder: (context, snap) {
+                              if (snap.connectionState == ConnectionState.waiting) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 12),
+                                  child: Center(child: CircularProgressIndicator()),
+                                );
+                              }
+                              if (snap.hasError) {
+                                return Text(
+                                  'Failed to load treatments: ${snap.error}',
+                                  style: const TextStyle(fontSize: 14),
+                                );
+                              }
+                              final doc = snap.data;
+                              final data = doc != null && doc.exists ? doc.data() : null;
+                              final treatments =
+                                  (data?['treatments'] as List? ?? []).map((e) => e.toString()).toList();
+                              if (treatments.isEmpty) {
+                                return const Text(
+                                  'No approved treatments yet. Please wait for veterinarian approval.',
+                                  style: TextStyle(fontSize: 15),
+                                );
+                              }
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  ...treatments.map(
+                                    (t) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Text('• $t', style: const TextStyle(fontSize: 15)),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
                           ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Treatment & Recommendations',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'N/A',
-                            style: TextStyle(fontSize: 15, color: Colors.grey),
-                          ),
-                        ] else if (info != null) ...[
-                          const Text(
-                            'Symptoms',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          ...info['symptoms'].map<Widget>(
-                            (s) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Text(
-                                '• $s',
-                                style: const TextStyle(fontSize: 15),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Treatment & Recommendations',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          ...info['treatments'].map<Widget>(
-                            (t) => Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Text(
-                                '• $t',
-                                style: const TextStyle(fontSize: 15),
-                              ),
-                            ),
-                          ),
-                        ] else ...[
-                          const Text('No detailed information available.'),
-                        ],
                       ],
                     ),
                   ),
@@ -428,7 +342,7 @@ class DetectionResultCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      isHealthy || result.label.toLowerCase() == 'tip_burn'
+                      isHealthy
                           ? Icons.info_outline
                           : Icons.medical_services_outlined,
                       color: diseaseColor,
@@ -436,7 +350,7 @@ class DetectionResultCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      isHealthy || result.label.toLowerCase() == 'tip_burn'
+                      isHealthy
                           ? tr('not_applicable')
                           : tr('see_recommendation'),
                       style: TextStyle(

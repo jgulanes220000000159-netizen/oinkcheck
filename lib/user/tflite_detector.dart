@@ -78,7 +78,7 @@ class TFLiteDetector {
               .map((e) => e.trim())
               .where((e) => e.isNotEmpty && e.toLowerCase() != 'place')
               .toList();
-      _interpreter = await Interpreter.fromAsset('assets/vv6.tflite');
+      _interpreter = await Interpreter.fromAsset('assets/vv7.tflite');
 
       final inTensor = _interpreter!.getInputTensor(0);
       final outTensor = _interpreter!.getOutputTensor(0);

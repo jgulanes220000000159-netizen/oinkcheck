@@ -1012,21 +1012,31 @@ bool _isFilePath(String path) {
 }
 
 String _formatExpertLabel(String label) {
-  switch (label.toLowerCase()) {
-    case 'backterial_blackspot':
-    case 'bacterial blackspot':
-      return 'Bacterial black spot';
-    case 'powdery_mildew':
-    case 'powdery mildew':
-      return 'Powdery Mildew';
-    case 'tip_burn':
-    case 'tip burn':
-    case 'unknown':
-      return 'Unknown';
+  // Keep consistent with the current pig model classes.
+  // (Importing shared UI here is not worth it for this small helper.)
+  final key = label.toLowerCase().trim().replaceAll(' ', '_');
+  switch (key) {
+    case 'healthy':
+      return 'Healthy';
+    case 'infected_bacterial_erysipelas':
+      return 'Bacterial Erysipelas';
+    case 'infected_bacterial_greasy':
+      return 'Greasy Pig Disease';
+    case 'infected_environmental_sunburn':
+      return 'Sunburn';
+    case 'infected_fungal_ringworm':
+      return 'Ringworm';
+    case 'infected_parasitic_mange':
+      return 'Mange';
+    case 'infected_viral_foot_and_mouth':
+      return 'Foot-and-Mouth Disease';
+    case 'swine_pox':
+      return 'Swine Pox';
     default:
-      return label
+      return key
           .split('_')
-          .map((word) => word[0].toUpperCase() + word.substring(1))
+          .where((w) => w.isNotEmpty)
+          .map((w) => w[0].toUpperCase() + w.substring(1))
           .join(' ');
   }
 }

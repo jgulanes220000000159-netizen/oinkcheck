@@ -12,6 +12,8 @@ import 'package:hive/hive.dart';
 import 'package:image/image.dart' as img;
 import 'tflite_detector.dart';
 import 'detection_painter.dart';
+import '../shared/pig_disease_ui.dart';
+import '../shared/treatments_repository.dart';
 // import 'detection_carousel_screen.dart';
 // import 'detection_result_card.dart';
 // import 'tracking_page.dart';
@@ -119,20 +121,37 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
     }
   }
 
-  Map<String, int> _getOverallDiseaseCount() {
-    final Map<String, int> counts = {};
-    for (var results in widget.allResults.values) {
-      for (var result in results) {
-        counts[result.label] = (counts[result.label] ?? 0) + 1;
+  /// Aggregates average confidence per disease label across all analyzed images.
+  /// Replaces the old count-based summary.
+  Map<String, Map<String, dynamic>> _getOverallDiseaseConfidenceStats() {
+    final Map<String, double> sum = {};
+    final Map<String, int> n = {};
+    final Map<String, double> max = {};
+
+    for (final results in widget.allResults.values) {
+      for (final r in results) {
+        final label = r.label;
+        final conf = r.confidence;
+        sum[label] = (sum[label] ?? 0) + conf;
+        n[label] = (n[label] ?? 0) + 1;
+        final prevMax = max[label] ?? 0.0;
+        if (conf > prevMax) max[label] = conf;
       }
     }
-    return counts;
-  }
 
-  double _getDiseasePercentage(String disease, Map<String, int> diseaseCounts) {
-    final totalLeaves = diseaseCounts.values.fold(0, (a, b) => a + b);
-    if (totalLeaves == 0) return 0;
-    return diseaseCounts[disease]! / totalLeaves;
+    final Map<String, Map<String, dynamic>> out = {};
+    for (final entry in n.entries) {
+      final label = entry.key;
+      final count = entry.value;
+      final avg = count == 0 ? 0.0 : (sum[label] ?? 0.0) / count;
+      out[label] = {
+        'avg': avg,
+        'max': max[label] ?? avg,
+        // Keep sampleCount for internal/backward compatibility even if UI doesn't show "count"
+        'sampleCount': count,
+      };
+    }
+    return out;
   }
 
   // Compress image without resizing dimensions. Only re-encodes pixels.
@@ -261,22 +280,20 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
         }
       }
 
-      // Convert disease counts to the format expected by ReviewManager
-      final Map<String, int> diseaseLabelCounts = {};
-      widget.allResults.values.forEach((results) {
-        for (var result in results) {
-          print('DEBUG: Found detection result with label: "${result.label}"');
-          diseaseLabelCounts[result.label] =
-              (diseaseLabelCounts[result.label] ?? 0) + 1;
-        }
-      });
-      print('DEBUG: All detected labels: ${diseaseLabelCounts.keys.toList()}');
-      final diseaseCounts =
-          diseaseLabelCounts.entries.map((entry) {
+      // Build confidence-focused summary (avg/max). Keep count for backward compatibility.
+      final stats = _getOverallDiseaseConfidenceStats();
+      final diseaseSummary =
+          stats.entries.map((entry) {
+            final v = entry.value;
+            final avg = (v['avg'] as double?) ?? 0.0;
+            final mx = (v['max'] as double?) ?? avg;
+            final cnt = (v['sampleCount'] as int?) ?? 0;
             return {
               'name': _formatLabel(entry.key),
               'label': entry.key,
-              'count': entry.value,
+              'avgConfidence': avg,
+              'maxConfidence': mx,
+              'count': cnt, // kept so existing pages (map/recent activity) won't break
             };
           }).toList();
 
@@ -346,8 +363,16 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
             'submittedAt': now,
             'images': images, // This now includes both imageUrl and imagePath
             'diseaseSummary':
-                diseaseCounts
-                    .map((e) => {'name': e['name'], 'count': e['count']})
+                diseaseSummary
+                    .map(
+                      (e) => {
+                        'name': e['name'],
+                        'count': e['count'],
+                        'avgConfidence': e['avgConfidence'],
+                        'maxConfidence': e['maxConfidence'],
+                        'label': e['label'],
+                      },
+                    )
                     .toList(),
             // No expertReview yet
           });
@@ -396,31 +421,10 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
     }
   }
 
-  // String _getSeverityLevel(String disease) {
-  //   final avgConfidence = _getDiseasePercentage(
-  //     disease,
-  //     _getOverallDiseaseCount(),
-  //   );
-  //   if (avgConfidence > 0.8) return 'high';
-  //   if (avgConfidence > 0.5) return 'medium';
-  //   return 'low';
-  // }
+  // Removed old count-percentage severity helper; we now focus on confidence averages.
 
   String _formatLabel(String label) {
-    switch (label.toLowerCase()) {
-      case 'backterial_blackspot':
-        return 'Bacterial black spot';
-      case 'powdery_mildew':
-        return 'Powdery Mildew';
-      case 'tip_burn':
-      case 'unknown':
-        return 'Unknown';
-      default:
-        return label
-            .split('_')
-            .map((word) => word[0].toUpperCase() + word.substring(1))
-            .join(' ');
-    }
+    return PigDiseaseUI.displayName(label);
   }
 
   Widget _buildNoDiseasesMessage() {
@@ -452,15 +456,12 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
 
   Widget _buildDiseaseSummaryCard(
     String disease,
-    int count,
-    Map<String, int> diseaseCounts,
+    double avgConfidence,
+    double maxConfidence,
   ) {
     final color = DetectionPainter.diseaseColors[disease] ?? Colors.grey;
-    final percentage = _getDiseasePercentage(disease, diseaseCounts);
     final isHealthy = disease.toLowerCase() == 'healthy';
-    final isUnknown =
-        disease.toLowerCase() == 'tip_burn' ||
-        disease.toLowerCase() == 'unknown';
+    final isUnknown = disease.toLowerCase() == 'unknown';
 
     return Card(
       elevation: 4,
@@ -519,7 +520,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      tr('found_count', namedArgs: {'count': '$count'}),
+                      'Avg ${(avgConfidence * 100).toStringAsFixed(1)}%',
                       style: TextStyle(
                         color: color,
                         fontWeight: FontWeight.bold,
@@ -536,7 +537,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          tr('percentage_of_total_leaves'),
+                          'Average confidence',
                           style: TextStyle(
                             color: Colors.grey[600],
                             fontSize: 14,
@@ -546,7 +547,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(10),
                           child: LinearProgressIndicator(
-                            value: percentage,
+                            value: avgConfidence.clamp(0.0, 1.0),
                             backgroundColor: color.withOpacity(0.1),
                             valueColor: AlwaysStoppedAnimation<Color>(color),
                             minHeight: 8,
@@ -557,7 +558,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    '${(percentage * 100).toStringAsFixed(1)}%',
+                    '${(avgConfidence * 100).toStringAsFixed(1)}%',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -565,6 +566,11 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Max confidence: ${(maxConfidence * 100).toStringAsFixed(1)}%',
+                style: TextStyle(color: Colors.grey[600], fontSize: 13),
               ),
               const SizedBox(height: 12),
               Container(
@@ -604,7 +610,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
     );
   }
 
-  // Special cases for diseases not in Firestore (only for healthy, tip_burn, and unknown)
+  // Special cases for diseases not in Firestore (only for healthy and unknown)
   static const Map<String, Map<String, dynamic>> specialDiseaseInfo = {
     'healthy': {
       'symptoms': [
@@ -618,10 +624,6 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
         'Practice good orchard sanitation',
       ],
     },
-    'tip_burn': {
-      'symptoms': ['N/A.'],
-      'treatments': ['N/A.'],
-    },
     'unknown': {
       'symptoms': ['N/A.'],
       'treatments': ['N/A.'],
@@ -629,12 +631,13 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
   };
 
   void _showDiseaseRecommendations(BuildContext context, String disease) async {
-    final label = disease.toLowerCase();
+    final diseaseId = PigDiseaseUI.treatmentIdForLabel(disease);
+    final repo = TreatmentsRepository();
 
-    // Check if it's a special case (healthy or tip_burn) that's not in Firestore
+    // Check if it's a special case (healthy/unknown) that's not in Firestore
     Map<String, dynamic>? info;
-    if (specialDiseaseInfo.containsKey(label)) {
-      info = specialDiseaseInfo[label];
+    if (specialDiseaseInfo.containsKey(diseaseId)) {
+      info = specialDiseaseInfo[diseaseId];
     } else {
       // If disease info is not loaded yet, try to load it
       if (_diseaseInfo.isEmpty) {
@@ -663,11 +666,11 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
       }
 
       // Try to get from Firestore data with multiple matching strategies
-      info = _diseaseInfo[label];
+      info = _diseaseInfo[disease.toLowerCase()];
 
       // If not found, try with formatted label
       if (info == null) {
-        final formattedLabel = _formatLabel(label).toLowerCase();
+        final formattedLabel = _formatLabel(disease).toLowerCase();
         info = _diseaseInfo[formattedLabel];
       }
 
@@ -675,7 +678,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
       if (info == null) {
         // Handle common naming variations
         String normalizedLabel =
-            label
+            disease.toLowerCase()
                 .replaceAll('_', ' ') // Replace underscores with spaces
                 .replaceAll(
                   'blackspot',
@@ -687,9 +690,9 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
 
       // Special handling for bacterial black spot typo
       if (info == null &&
-          (label.contains('bacterial') || label.contains('backterial'))) {
+          (diseaseId.contains('bacterial') || diseaseId.contains('backterial'))) {
         // Try to match with the correct database key
-        if (label.contains('bacterial') || label.contains('backterial')) {
+        if (diseaseId.contains('bacterial') || diseaseId.contains('backterial')) {
           info = _diseaseInfo['Bacterial black spot'];
         }
       }
@@ -701,15 +704,15 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
               .toLowerCase()
               .replaceAll('_', ' ')
               .replaceAll('blackspot', 'black spot');
-          final normalizedLabel = label
+          final normalizedLabel = disease.toLowerCase()
               .replaceAll('_', ' ')
               .replaceAll('blackspot', 'black spot')
               .replaceAll('backterial', 'bacterial'); // Fix typo
 
           if (normalizedKey.contains(normalizedLabel) ||
               normalizedLabel.contains(normalizedKey) ||
-              key.toLowerCase().contains(label) ||
-              label.contains(key.toLowerCase())) {
+              key.toLowerCase().contains(diseaseId) ||
+              diseaseId.contains(key.toLowerCase())) {
             info = _diseaseInfo[key];
             break;
           }
@@ -718,7 +721,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
     }
 
     // Debug print to help identify the issue
-    print('DEBUG: Looking for disease: "$disease" (label: "$label")');
+    print('DEBUG: Looking for disease: "$disease" (diseaseId: "$diseaseId")');
     print(
       'DEBUG: Available specialDiseaseInfo keys: ${specialDiseaseInfo.keys}',
     );
@@ -732,12 +735,12 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
     );
 
     // Special debug for bacterial black spot
-    if (label.contains('bacterial') ||
-        label.contains('black') ||
-        label.contains('backterial')) {
+    if (diseaseId.contains('bacterial') ||
+        diseaseId.contains('black') ||
+        diseaseId.contains('backterial')) {
       print('DEBUG: BACTERIAL BLACK SPOT DEBUG:');
       print('  - Original disease: "$disease"');
-      print('  - Label: "$label"');
+      print('  - diseaseId: "$diseaseId"');
       print(
         '  - Looking for keys containing "bacterial": ${_diseaseInfo.keys.where((k) => k.toLowerCase().contains('bacterial')).toList()}',
       );
@@ -760,7 +763,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
       print('DEBUG: _diseaseInfo is empty!');
     }
 
-    final isHealthy = label == 'healthy' || label == 'tip_burn';
+    final isHealthy = diseaseId == 'healthy';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -790,9 +793,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                               color:
                                   isHealthy
                                       ? Colors.green
-                                      : DetectionPainter
-                                              .diseaseColors[disease] ??
-                                          Colors.grey,
+                                      : PigDiseaseUI.colorFor(diseaseId),
                               size: 24,
                             ),
                             const SizedBox(width: 12),
@@ -812,7 +813,80 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                           ],
                         ),
                         const SizedBox(height: 20),
-                        if (info != null) ...[
+                        if (!isHealthy && diseaseId != 'unknown') ...[
+                          Text(
+                            tr('treatment_and_recommendations'),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          FutureBuilder(
+                            future: repo.getPublicDoc(diseaseId),
+                            builder: (context, snap) {
+                              if (snap.connectionState == ConnectionState.waiting) {
+                                return const Padding(
+                                  padding: EdgeInsets.symmetric(vertical: 12),
+                                  child: Center(child: CircularProgressIndicator()),
+                                );
+                              }
+                              if (snap.hasError) {
+                                return Text(
+                                  'Failed to load treatments: ${snap.error}',
+                                  style: const TextStyle(fontSize: 14),
+                                );
+                              }
+                              final doc = snap.data;
+                              final data = doc != null && doc.exists ? doc.data() : null;
+                              final treatments =
+                                  (data?['treatments'] as List? ?? []).map((e) => e.toString()).toList();
+                              if (treatments.isEmpty) {
+                                return const Text(
+                                  'No approved treatments yet. Please wait for veterinarian approval.',
+                                  style: TextStyle(fontSize: 15),
+                                );
+                              }
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  ...treatments.map(
+                                    (t) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 8),
+                                      child: Text('• $t', style: const TextStyle(fontSize: 15)),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ] else if (isHealthy) ...[
+                          Text(
+                            tr('treatment_and_recommendations'),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'No disease detected. Keep monitoring and maintain good hygiene.',
+                            style: TextStyle(fontSize: 15),
+                          ),
+                        ] else if (diseaseId == 'unknown') ...[
+                          Text(
+                            tr('treatment_and_recommendations'),
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'No recommendation available for Unknown. Please rescan with clearer images.',
+                            style: TextStyle(fontSize: 15),
+                          ),
+                        ] else if (info != null) ...[
                           Text(
                             tr('symptoms'),
                             style: TextStyle(
@@ -1201,8 +1275,9 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
     );
   }
 
-  // Add this method to handle 'Add to Tracking' logic
-  Future<void> _addToTracking() async {
+  // Removed: "Add to Tracking" option (user requested).
+  // Keeping the implementation commented/removed prevents users from saving scans to tracking here.
+  /* Future<void> _addToTracking() async {
     print('DEBUG: _addToTracking called');
     setState(() {
       _isSubmitting = true;
@@ -1350,25 +1425,24 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
         });
       }
     }
-  }
+  } */
 
   @override
   Widget build(BuildContext context) {
-    final diseaseCounts = _getOverallDiseaseCount();
-    final totalDetections = diseaseCounts.values.fold(0, (a, b) => a + b);
+    final stats = _getOverallDiseaseConfidenceStats();
     // Kick off image size loading only when needed (first build), avoid blocking transition
     if (showBoundingBoxes && imageSizes.isEmpty) {
       // Defer loading sizes to next microtask to avoid layout jank
       Future.microtask(() => _loadImageSizes());
     }
 
-    // Sort diseases by percentage in descending order
-    final sortedDiseases =
-        diseaseCounts.entries.toList()..sort((a, b) {
-          final percentageA = _getDiseasePercentage(a.key, diseaseCounts);
-          final percentageB = _getDiseasePercentage(b.key, diseaseCounts);
-          return percentageB.compareTo(percentageA);
-        });
+    // Sort diseases by average confidence (descending)
+    final sortedDiseases = stats.entries.toList()
+      ..sort((a, b) {
+        final aAvg = (a.value['avg'] as double?) ?? 0.0;
+        final bAvg = (b.value['avg'] as double?) ?? 0.0;
+        return bAvg.compareTo(aAvg);
+      });
 
     return Scaffold(
       backgroundColor: Colors.grey[100],
@@ -1426,7 +1500,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    tr('total_leaves'),
+                                    'Analyzed images',
                                     style: TextStyle(
                                       color: Colors.grey[600],
                                       fontSize: 14,
@@ -1434,7 +1508,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    '$totalDetections',
+                                    '${widget.imagePaths.length}',
                                     style: const TextStyle(
                                       fontSize: 24,
                                       fontWeight: FontWeight.bold,
@@ -1501,10 +1575,13 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                             : Column(
                               children: [
                                 ...sortedDiseases.map((entry) {
+                                  final v = entry.value;
+                                  final avg = (v['avg'] as double?) ?? 0.0;
+                                  final mx = (v['max'] as double?) ?? avg;
                                   return _buildDiseaseSummaryCard(
                                     entry.key,
-                                    entry.value,
-                                    diseaseCounts,
+                                    avg,
+                                    mx,
                                   );
                                 }).toList(),
                               ],
@@ -1533,24 +1610,6 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                 ),
                 child: Row(
                   children: [
-                    Expanded(
-                      child: SizedBox(
-                        height: 50,
-                        child: ElevatedButton.icon(
-                          onPressed: _addToTracking,
-                          icon: const Icon(Icons.save),
-                          label: Text(tr('add_to_tracking')),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey[700],
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
                     Expanded(
                       child: SizedBox(
                         height: 50,

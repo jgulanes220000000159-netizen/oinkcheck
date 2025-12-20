@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'analysis_summary_screen.dart';
 import 'tflite_detector.dart';
+import '../shared/pig_disease_ui.dart';
 import 'disease_details_page.dart';
 import 'profile_page.dart';
 import 'user_request_tabbed_list.dart';
@@ -1347,23 +1348,10 @@ class _HomePageState extends State<HomePage> {
     }
     if (topDisease != null) {
       final rawName = (topDisease['name'] ?? '').toString();
-      final lower = rawName.toLowerCase();
-      if (lower == 'tip_burn' || lower == 'tip burn') {
-        diseaseName = 'Unknown';
-      } else if (lower == 'backterial_blackspot') {
-        diseaseName = 'Bacterial black spot';
-      } else if (lower == 'powdery_mildew') {
-        diseaseName = 'Powdery Mildew';
-      } else if (rawName.isEmpty) {
+      if (rawName.isEmpty) {
         diseaseName = 'Unknown';
       } else {
-        diseaseName = rawName
-            .split('_')
-            .map(
-              (word) =>
-                  word.isEmpty ? '' : word[0].toUpperCase() + word.substring(1),
-            )
-            .join(' ');
+        diseaseName = PigDiseaseUI.displayName(rawName);
       }
     }
 
@@ -1679,18 +1667,7 @@ class _HomePageState extends State<HomePage> {
 
   // Normalize Firestore disease names to image map keys
   String _normalizeDiseaseKey(String name) {
-    final lower = name.toLowerCase().trim();
-    final underscored = lower.replaceAll(' ', '_');
-    if (underscored == 'bacterial_black_spot' ||
-        underscored == 'bacterial_blackspot' ||
-        underscored == 'backterial_blackspot') {
-      // Keep asset key consistent with existing filename map
-      return 'backterial_blackspot';
-    }
-    if (underscored == 'powdery_mildew') {
-      return 'powdery_mildew';
-    }
-    return underscored;
+    return PigDiseaseUI.normalizeKey(name);
   }
 
   @override

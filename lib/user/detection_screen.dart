@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
@@ -7,6 +6,7 @@ import 'package:image/image.dart' as img;
 
 import 'tflite_detector.dart';
 import 'detection_painter.dart';
+import '../shared/pig_disease_ui.dart';
 
 /// A live camera feed running ONNX object detection on each frame.
 class RealtimeDetectionScreen extends StatefulWidget {
@@ -256,19 +256,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   String _formatLabel(String label) {
-    switch (label.toLowerCase()) {
-      case 'backterial_blackspot':
-        return 'Bacterial black spot';
-      case 'powdery_mildew':
-        return 'Powdery Mildew';
-      case 'tip_burn':
-        return 'Tip Burn';
-      default:
-        return label
-            .split('_')
-            .map((word) => word[0].toUpperCase() + word.substring(1))
-            .join(' ');
-    }
+    return PigDiseaseUI.displayName(label);
   }
 
   @override
