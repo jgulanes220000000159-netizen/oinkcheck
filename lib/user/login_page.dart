@@ -4,6 +4,7 @@ import 'register_page.dart';
 import '../expert/expert_dashboard.dart';
 import '../about_app_page.dart';
 import '../head_veterinarian/veterinarian_dashboard.dart';
+import '../machine_learning_expert/ml_expert_dashboard.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -40,6 +41,12 @@ class _LoginPageState extends State<LoginPage> {
     final r = (role ?? '').toString().trim().toLowerCase();
     if (r == 'head_veterinarian' || r == 'head veterinarian')
       return 'veterinarian';
+    if (r == 'machine_learning_expert' ||
+        r == 'machine learning expert' ||
+        r == 'ml_expert' ||
+        r == 'ml expert') {
+      return 'machine_learning_expert';
+    }
     return r;
   }
 
@@ -233,6 +240,25 @@ class _LoginPageState extends State<LoginPage> {
                 MaterialPageRoute(
                   builder: (context) => const ExpertDashboard(),
                 ),
+              );
+            } else if (role == 'machine_learning_expert') {
+              final userBox = await Hive.openBox('userBox');
+              await userBox.put('isLoggedIn', true);
+              await userBox.put('userProfile', {
+                'fullName': data['fullName'] ?? '',
+                'email': data['email'] ?? '',
+                'phoneNumber': data['phoneNumber'] ?? '',
+                'address': data['address'] ?? '',
+                'role': role,
+                'imageProfile': data['imageProfile'] ?? '',
+                'userId': user.uid,
+              });
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const MachineLearningExpertDashboard(),
+                ),
+                (route) => false,
               );
             } else if (role == 'admin') {
               setState(() {

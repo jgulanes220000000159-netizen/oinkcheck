@@ -5,7 +5,18 @@ import '../shared/treatments_repository.dart';
 import '../shared/disease_image.dart';
 
 class TreatmentEditorPage extends StatefulWidget {
-  const TreatmentEditorPage({super.key});
+  const TreatmentEditorPage({
+    super.key,
+    this.directPublish = false,
+    this.showPending = true,
+  });
+
+  /// If true, saves directly to `treatments_public` (for head veterinarian).
+  /// If false, submits proposals for approval (for experts).
+  final bool directPublish;
+
+  /// If false, hides the pending-proposals UI (useful for head vet manage tab).
+  final bool showPending;
 
   @override
   State<TreatmentEditorPage> createState() => _TreatmentEditorPageState();
@@ -55,6 +66,109 @@ class _TreatmentEditorPageState extends State<TreatmentEditorPage> {
 
           if (uid == null) {
             return const Center(child: Text('Not signed in.'));
+          }
+
+          // Head vet "direct publish" mode does not need proposal tracking UI.
+          if (!widget.showPending) {
+            // ALWAYS show the 7 diseases. Overlay approved info if present.
+            final items = _defaultDiseases
+                .map((d) {
+                  final id = d['id']!;
+                  final base = <String, dynamic>{
+                    'diseaseId': id,
+                    'name': d['name']!,
+                    'scientificName': '',
+                    'treatments': <String>[],
+                  };
+                  final approved = approvedByDiseaseId[id];
+                  final merged = <String, dynamic>{
+                    ...base,
+                    if (approved != null) ...approved,
+                  };
+                  return {
+                    'id': id,
+                    'name': (merged['name'] ?? d['name']!).toString(),
+                    'data': merged,
+                  };
+                })
+                .toList();
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: items.length,
+              itemBuilder: (context, index) {
+                final item = items[index];
+                final id = item['id'] as String;
+                final name = item['name'] as String;
+                final data = item['data'] as Map<String, dynamic>;
+                final treatments = (data['treatments'] as List? ?? [])
+                    .map((e) => e.toString())
+                    .toList();
+                final hasApproved = treatments.isNotEmpty;
+
+                return Card(
+                  elevation: 0,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: ListTile(
+                    leading:
+                        DiseaseImage(diseaseId: id, size: 52, borderRadius: 10),
+                    title: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        if (hasApproved)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.green.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: Colors.green.withOpacity(0.25),
+                              ),
+                            ),
+                            child: const Text(
+                              'PUBLISHED',
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      '${treatments.length} treatment item(s)',
+                      style: TextStyle(color: Colors.grey[600]),
+                    ),
+                    trailing: const Icon(Icons.edit, color: Colors.green),
+                    onTap: () async {
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TreatmentEditScreen(
+                            diseaseId: id,
+                            initial: data,
+                            directPublish: widget.directPublish,
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            );
           }
 
           return StreamBuilder(
@@ -404,11 +518,13 @@ class TreatmentEditScreen extends StatefulWidget {
     required this.diseaseId,
     required this.initial,
     this.proposalId,
+    this.directPublish = false,
   });
 
   final String diseaseId;
   final Map<String, dynamic> initial;
   final String? proposalId;
+  final bool directPublish;
 
   @override
   State<TreatmentEditScreen> createState() => _TreatmentEditScreenState();
@@ -456,20 +572,36 @@ class _TreatmentEditScreenState extends State<TreatmentEditScreen> {
 
     setState(() => _saving = true);
     try {
-      final proposalId = await _repo.submitProposal(
-        proposalId: widget.proposalId,
-        diseaseId: widget.diseaseId,
-        name: name,
-        scientificName: _scientificName.text.trim(),
-        treatments: treatments,
-      );
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Submitted for approval. (proposalId: $proposalId)'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      if (widget.directPublish) {
+        await _repo.upsertPublicTreatment(
+          diseaseId: widget.diseaseId,
+          name: name,
+          scientificName: _scientificName.text.trim(),
+          treatments: treatments,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Published to farmers.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        final proposalId = await _repo.submitProposal(
+          proposalId: widget.proposalId,
+          diseaseId: widget.diseaseId,
+          name: name,
+          scientificName: _scientificName.text.trim(),
+          treatments: treatments,
+        );
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Submitted for approval. (proposalId: $proposalId)'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
       Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
@@ -491,7 +623,11 @@ class _TreatmentEditScreenState extends State<TreatmentEditScreen> {
       appBar: AppBar(
         backgroundColor: Colors.green,
         foregroundColor: Colors.white,
-        title: Text(widget.proposalId == null ? 'Edit Treatment' : 'Edit Pending Proposal'),
+        title: Text(
+          widget.directPublish
+              ? 'Edit Treatment'
+              : (widget.proposalId == null ? 'Edit Treatment' : 'Edit Pending Proposal'),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -610,7 +746,7 @@ class _TreatmentEditScreenState extends State<TreatmentEditScreen> {
                           valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                         ),
                       )
-                    : const Text('Submit for approval'),
+                    : Text(widget.directPublish ? 'Save' : 'Submit for approval'),
               ),
             ),
           ],

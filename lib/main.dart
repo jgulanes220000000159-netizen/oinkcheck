@@ -19,6 +19,7 @@ import 'package:flutter/services.dart';
 import 'shared/connectivity_service.dart';
 import 'shared/no_internet_banner.dart';
 import 'package:month_year_picker/month_year_picker.dart';
+import 'machine_learning_expert/ml_expert_dashboard.dart';
 
 void main() {
   runZonedGuarded(
@@ -296,6 +297,12 @@ class CapstoneApp extends StatelessWidget {
     }
     if (normalizedRole == 'expert') {
       return const ExpertDashboard();
+    }
+    if (normalizedRole == 'machine_learning_expert' ||
+        normalizedRole == 'machine learning expert' ||
+        normalizedRole == 'ml_expert' ||
+        normalizedRole == 'ml expert') {
+      return const MachineLearningExpertDashboard();
     } else {
       return const HomePage();
     }

@@ -8,7 +8,11 @@ import 'veterinarian_profile.dart';
 import '../shared/disease_image.dart';
 
 class TreatmentApprovalsPage extends StatefulWidget {
-  const TreatmentApprovalsPage({super.key});
+  const TreatmentApprovalsPage({super.key, this.embedded = false});
+
+  /// When true, this page is shown inside the expert-style veterinarian dashboard,
+  /// so we hide the AppBar and rely on the parent header/profile.
+  final bool embedded;
 
   @override
   State<TreatmentApprovalsPage> createState() => _TreatmentApprovalsPageState();
@@ -40,215 +44,49 @@ class _TreatmentApprovalsPageState extends State<TreatmentApprovalsPage> {
     }
   }
 
-  Future<void> _editPendingProposal(String proposalId, Map<String, dynamic> data) async {
-    final nameCtrl = TextEditingController(text: (data['name'] ?? '').toString());
-    final sciCtrl = TextEditingController(
-      text: (data['scientificName'] ?? '').toString(),
-    );
-    final list = (data['treatments'] as List? ?? []).map((e) => e.toString()).toList();
-    final treatmentCtrls = <TextEditingController>[
-      for (final t in (list.isEmpty ? <String>[''] : list))
-        TextEditingController(text: t),
-    ];
-
-    final saved = await showModalBottomSheet<bool>(
+  Future<void> _cancelProposal(String id) async {
+    final controller = TextEditingController();
+    final reason = await showDialog<String>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return DraggableScrollableSheet(
-          initialChildSize: 0.85,
-          minChildSize: 0.6,
-          maxChildSize: 0.95,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Container(
-                    width: 42,
-                    height: 5,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Edit Pending Proposal',
-                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Expanded(
-                    child: ListView(
-                      controller: scrollController,
-                      padding: EdgeInsets.only(
-                        left: 16,
-                        right: 16,
-                        bottom: MediaQuery.of(context).viewInsets.bottom + 18,
-                      ),
-                      children: [
-                        TextField(
-                          controller: nameCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Disease Name',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: sciCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Scientific Name (optional)',
-                            border: OutlineInputBorder(),
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Treatments',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                treatmentCtrls.add(TextEditingController());
-                                // Rebuild bottom sheet
-                                (context as Element).markNeedsBuild();
-                              },
-                              icon: const Icon(Icons.add, size: 18),
-                              label: const Text('Add'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        ...List.generate(treatmentCtrls.length, (i) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: treatmentCtrls[i],
-                                    decoration: InputDecoration(
-                                      labelText: 'Treatment ${i + 1}',
-                                      border: const OutlineInputBorder(),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                IconButton(
-                                  tooltip: 'Remove',
-                                  onPressed: treatmentCtrls.length <= 1
-                                      ? null
-                                      : () {
-                                          treatmentCtrls[i].dispose();
-                                          treatmentCtrls.removeAt(i);
-                                          (context as Element).markNeedsBuild();
-                                        },
-                                  icon: const Icon(Icons.close),
-                                ),
-                              ],
-                            ),
-                          );
-                        }),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Cancel'),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: const Text('Save'),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    if (saved != true) {
-      nameCtrl.dispose();
-      sciCtrl.dispose();
-      for (final c in treatmentCtrls) {
-        c.dispose();
-      }
-      return;
-    }
-
-    final newName = nameCtrl.text.trim();
-    final newSci = sciCtrl.text.trim();
-    final newTreatments = treatmentCtrls
-        .map((c) => c.text.trim())
-        .where((t) => t.isNotEmpty)
-        .toList();
-
-    nameCtrl.dispose();
-    sciCtrl.dispose();
-    for (final c in treatmentCtrls) {
-      c.dispose();
-    }
-
-    if (newName.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Disease name is required.'),
-          backgroundColor: Colors.red,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel proposal'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            labelText: 'Remarks (optional)',
+          ),
+          maxLines: 3,
         ),
-      );
-      return;
-    }
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Back'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Cancel proposal'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (reason == null) return;
 
     try {
-      await _repo.vetEditPendingProposal(
-        proposalId: proposalId,
-        name: newName,
-        scientificName: newSci,
-        treatments: newTreatments,
-      );
+      // Keep record for audit; do NOT delete.
+      await _repo.rejectProposal(proposalId: id, reason: reason);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Updated. Proposal is still pending for approval.'),
-          backgroundColor: Colors.green,
+          content: Text('Canceled.'),
+          backgroundColor: Colors.orange,
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Edit failed: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Cancel failed: $e'), backgroundColor: Colors.red),
       );
     }
   }
@@ -291,86 +129,11 @@ class _TreatmentApprovalsPageState extends State<TreatmentApprovalsPage> {
     }
   }
 
-  Future<void> _reject(String id) async {
-    final controller = TextEditingController();
-    final reason = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Reject changes'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(
-            labelText: 'Reason (optional)',
-          ),
-          maxLines: 3,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            child: const Text('Reject'),
-          ),
-        ],
-      ),
-    );
-    controller.dispose();
-    if (reason == null) return;
-
-    try {
-      await _repo.rejectProposal(proposalId: id, reason: reason);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Rejected.'), backgroundColor: Colors.orange),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Reject failed: $e'), backgroundColor: Colors.red),
-      );
-    }
-  }
+  // Removed: delete behavior. Head vet now "cancels" with optional remarks.
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        backgroundColor: Colors.green,
-        foregroundColor: Colors.white,
-        title: const Text('Veterinarian Approvals'),
-        actions: [
-          IconButton(
-            tooltip: 'Profile',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const VeterinarianProfilePage(),
-                ),
-              );
-            },
-            icon: const Icon(Icons.person),
-          ),
-          PopupMenuButton<String>(
-            onSelected: (value) async {
-              if (value == 'logout') {
-                await _logout();
-              }
-            },
-            itemBuilder: (context) => const [
-              PopupMenuItem(
-                value: 'logout',
-                child: Text('Logout'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: StreamBuilder(
+    final list = StreamBuilder(
         stream: _repo.watchPendingProposals(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -513,30 +276,7 @@ class _TreatmentApprovalsPageState extends State<TreatmentApprovalsPage> {
                         children: [
                           Expanded(
                             child: OutlinedButton(
-                              onPressed: () => _editPendingProposal(doc.id, data),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.blueGrey[700],
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 10,
-                                ),
-                                visualDensity: VisualDensity.compact,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                minimumSize: const Size(0, 40),
-                              ),
-                              child: const FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Text(
-                                  'Edit',
-                                  maxLines: 1,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () => _reject(doc.id),
+                              onPressed: () => _cancelProposal(doc.id),
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: Colors.red,
                                 padding: const EdgeInsets.symmetric(
@@ -550,7 +290,7 @@ class _TreatmentApprovalsPageState extends State<TreatmentApprovalsPage> {
                               child: const FittedBox(
                                 fit: BoxFit.scaleDown,
                                 child: Text(
-                                  'Reject',
+                                  'Cancel',
                                   maxLines: 1,
                                 ),
                               ),
@@ -591,7 +331,50 @@ class _TreatmentApprovalsPageState extends State<TreatmentApprovalsPage> {
             },
           );
         },
+      );
+
+    if (widget.embedded) {
+      return Container(
+        color: Colors.grey[50],
+        child: list,
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.grey[50],
+      appBar: AppBar(
+        backgroundColor: Colors.green,
+        foregroundColor: Colors.white,
+        title: const Text('Veterinarian Approvals'),
+        actions: [
+          IconButton(
+            tooltip: 'Profile',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const VeterinarianProfilePage(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.person),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (value) async {
+              if (value == 'logout') {
+                await _logout();
+              }
+            },
+            itemBuilder: (context) => const [
+              PopupMenuItem(
+                value: 'logout',
+                child: Text('Logout'),
+              ),
+            ],
+          ),
+        ],
       ),
+      body: list,
     );
   }
 }

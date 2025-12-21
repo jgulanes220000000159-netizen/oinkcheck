@@ -6,6 +6,7 @@ import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../shared/pig_disease_ui.dart';
+import '../shared/report_result_change_log.dart';
 import '../user/detection_painter.dart';
 import '../user/tflite_detector.dart';
 
@@ -454,15 +455,33 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null || uid.isEmpty) return;
     final nowIso = DateTime.now().toIso8601String();
+    final beforeSnap = await _reqRef.get();
+    final beforeReq = beforeSnap.data() ?? <String, dynamic>{};
+    final before =
+        ((beforeReq['expertDiseaseSummary'] as List?) ??
+                (beforeReq['diseaseSummary'] as List?) ??
+                const [])
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+    final after = _normalizeAndMergeSummary(edited);
+    final changeLog = ReportResultChangeLog.build(
+      before: before,
+      after: after,
+      byUid: uid,
+      byName: widget.myName,
+      source: 'discussion',
+    );
     await _reqRef.update({
-      'expertDiseaseSummary': _normalizeAndMergeSummary(edited),
+      'expertDiseaseSummary': after,
       'expertDiseaseSummaryUpdatedAt': nowIso,
       'expertDiseaseSummaryByUid': uid,
       'expertDiseaseSummaryByName': widget.myName,
+      'expertDiseaseSummaryChangeLog': changeLog,
     });
     // Keep discussion header disease label aligned with edited summary
     final dominant = PigDiseaseUI.dominantLabelFromSummary(
-      _normalizeAndMergeSummary(edited),
+      after,
       preferNonHealthy: true,
     );
     if (dominant.trim().isNotEmpty) {
@@ -731,7 +750,6 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
   }
 
   Future<void> _resolveDiscussion({
-    required String decision,
     required String createdByUid,
     String comment = '',
   }) async {
@@ -754,8 +772,10 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
         .collection('scan_requests')
         .doc(widget.requestId);
 
-    // Treat "agree" as a normal completion, and "disagree" as a reviewed (resolved) report.
-    final nextStatus = decision == 'agree' ? 'completed' : 'reviewed';
+    // Resolving a discussion always finalizes the report as COMPLETED.
+    // (Owner expert may use the optional comment for context.)
+    const decision = 'agree';
+    const nextStatus = 'completed';
     final nowIso = DateTime.now().toIso8601String();
 
     batch.update(reqRef, {
@@ -783,16 +803,12 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
       'closedAt': FieldValue.serverTimestamp(),
       'closedByUid': uid,
       'closedByName': widget.myName,
-      'lastMessageText': decision == 'agree'
-          ? 'Resolved by ${widget.myName}: AGREED (report completed).'
-          : 'Resolved by ${widget.myName}: DISAGREED (report reviewed).',
+      'lastMessageText': 'Resolved by ${widget.myName} (report completed).',
       'lastMessageAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
 
     batch.set(_msgRef.doc(), {
-      'text': decision == 'agree'
-          ? '✅ Resolved by ${widget.myName}: AGREED (report completed).'
-          : '✅ Resolved by ${widget.myName}: DISAGREED (report reviewed).',
+      'text': '✅ Resolved by ${widget.myName} (report completed).',
       'senderUid': uid,
       'senderName': widget.myName,
       'sentAt': FieldValue.serverTimestamp(),
@@ -804,11 +820,7 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(
-          decision == 'agree'
-              ? 'Resolved: agreed and marked as completed.'
-              : 'Resolved: disagreed and marked as reviewed.',
-        ),
+        content: const Text('Resolved and marked as completed.'),
         backgroundColor: Colors.green,
       ),
     );
@@ -822,7 +834,7 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
     if (uid != createdByUid) return;
 
     final ctrl = TextEditingController();
-    final res = await showDialog<String>(
+    final confirm = await showDialog<bool>(
       context: context,
       builder: (context) {
         return AlertDialog(
@@ -848,21 +860,16 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(context, false),
               child: const Text('Cancel'),
             ),
-            OutlinedButton(
-              onPressed: () => Navigator.pop(context, 'disagree'),
-              style: OutlinedButton.styleFrom(foregroundColor: Colors.red),
-              child: const Text('Resolve as Disagree'),
-            ),
             ElevatedButton(
-              onPressed: () => Navigator.pop(context, 'agree'),
+              onPressed: () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Resolve as Agree'),
+              child: const Text('Resolve'),
             ),
           ],
         );
@@ -870,10 +877,9 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
     );
     final comment = ctrl.text.trim();
     ctrl.dispose();
-    if (res == null) return;
+    if (confirm != true) return;
 
     await _resolveDiscussion(
-      decision: res,
       createdByUid: createdByUid,
       comment: comment,
     );

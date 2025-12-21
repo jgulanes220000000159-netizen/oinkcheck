@@ -44,6 +44,28 @@ class TreatmentsRepository {
     return _public.doc(diseaseId).get();
   }
 
+  /// Head veterinarian direct publish (no approval step).
+  /// Writes directly to `treatments_public/{diseaseId}` so farmers see it immediately.
+  Future<void> upsertPublicTreatment({
+    required String diseaseId,
+    required String name,
+    String? scientificName,
+    required List<String> treatments,
+    String? imageUrl,
+  }) async {
+    final user = _auth.currentUser;
+    await _public.doc(diseaseId).set({
+      'diseaseId': diseaseId,
+      'name': name,
+      'scientificName': scientificName ?? '',
+      'treatments': treatments,
+      if (imageUrl != null) 'imageUrl': imageUrl,
+      'updatedAt': FieldValue.serverTimestamp(),
+      'updatedBy': user?.uid,
+      'updatedByRole': 'head_veterinarian',
+    }, SetOptions(merge: true));
+  }
+
   Future<String> submitProposal({
     String? proposalId,
     required String diseaseId,

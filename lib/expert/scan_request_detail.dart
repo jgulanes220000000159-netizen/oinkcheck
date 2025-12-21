@@ -10,6 +10,7 @@ import 'package:hive/hive.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import '../shared/pig_disease_ui.dart';
+import '../shared/report_result_change_log.dart';
 
 class ScanRequestDetail extends StatefulWidget {
   final Map<String, dynamic> request;
@@ -28,6 +29,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
 
   // Expert-edited report result summary (does NOT change boxes).
   List<Map<String, dynamic>>? _editedDiseaseSummary;
+  List<Map<String, dynamic>> _lastSavedSummaryForDiff = const [];
 
   // Disease information loaded from Firestore (kept for potential future use)
   // Map<String, Map<String, dynamic>> _diseaseInfo = {}; // removed (not used)
@@ -39,6 +41,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
     _claimReportForReview();
     _loadDiseaseInfo();
     _initEditedSummaryFromRequest();
+    _initBaselineSummaryForDiff();
   }
 
   void _initEditedSummaryFromRequest() {
@@ -49,6 +52,16 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
     } else {
       _editedDiseaseSummary = null;
     }
+  }
+
+  void _initBaselineSummaryForDiff() {
+    final base =
+        (widget.request['expertDiseaseSummary'] as List?) ??
+        (widget.request['diseaseSummary'] as List?) ??
+        const [];
+    _lastSavedSummaryForDiff = base.whereType<Map>().map((e) {
+      return Map<String, dynamic>.from(e);
+    }).toList();
   }
 
   List<Map<String, dynamic>> _normalizeAndMergeSummary(List<Map<String, dynamic>> input) {
@@ -123,13 +136,25 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
 
     final nowIso = DateTime.now().toIso8601String();
     final expertName = _getCurrentExpertName();
+    final merged = _normalizeAndMergeSummary(edited);
+    final changeLog = ReportResultChangeLog.build(
+      before: _lastSavedSummaryForDiff,
+      after: merged,
+      byUid: user.uid,
+      byName: expertName.toString(),
+      source: 'edit_completed',
+    );
 
     await FirebaseFirestore.instance.collection('scan_requests').doc(docId).update({
-      'expertDiseaseSummary': _normalizeAndMergeSummary(edited),
+      'expertDiseaseSummary': merged,
       'expertDiseaseSummaryUpdatedAt': nowIso,
       'expertDiseaseSummaryByUid': user.uid,
       'expertDiseaseSummaryByName': expertName,
+      'expertDiseaseSummaryChangeLog': changeLog,
     });
+    // Update local snapshot so completed screens show the same remarks immediately.
+    widget.request['expertDiseaseSummaryChangeLog'] = changeLog;
+    _lastSavedSummaryForDiff = merged.map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
   Future<List<Map<String, dynamic>>?> _showEditSummarySheet(
@@ -592,6 +617,14 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
         if (_editedDiseaseSummary != null) 'expertDiseaseSummaryUpdatedAt': nowIso,
         if (_editedDiseaseSummary != null) 'expertDiseaseSummaryByUid': user.uid,
         if (_editedDiseaseSummary != null) 'expertDiseaseSummaryByName': expertName,
+        if (_editedDiseaseSummary != null)
+          'expertDiseaseSummaryChangeLog': ReportResultChangeLog.build(
+            before: _lastSavedSummaryForDiff,
+            after: _normalizeAndMergeSummary(_editedDiseaseSummary!),
+            byUid: user.uid,
+            byName: expertName.toString(),
+            source: isDisagree ? 'expert_review_to_discussion' : 'expert_review',
+          ),
         // Only set "final" expert fields on AGREE
         if (!isDisagree) 'expertName': expertName,
         if (!isDisagree) 'expertUid': user.uid,
@@ -655,9 +688,13 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Review submitted successfully'),
-            backgroundColor: Colors.green,
+          SnackBar(
+            content: Text(
+              isDisagree
+                  ? 'Disagreed — sent to Discussion (Chatbox) for collaboration.'
+                  : 'Review submitted successfully.',
+            ),
+            backgroundColor: isDisagree ? Colors.orange : Colors.green,
           ),
         );
         Navigator.pop(context, {
@@ -1347,6 +1384,45 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
               : 'Editing results changes what the farmer will see after you submit. It does not change AI bounding boxes.',
           style: TextStyle(color: Colors.grey[700], fontSize: 12),
         ),
+        if (isCompleted && widget.request['expertDiseaseSummaryChangeLog'] != null) ...[
+          const SizedBox(height: 10),
+          Builder(
+            builder: (context) {
+              final log = widget.request['expertDiseaseSummaryChangeLog'];
+              if (log is! Map) return const SizedBox.shrink();
+              final msg = (log['message'] ?? '').toString().trim();
+              if (msg.isEmpty) return const SizedBox.shrink();
+              return Card(
+                color: Colors.blue.shade50,
+                elevation: 0,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.blue.shade700,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          msg,
+                          style: TextStyle(
+                            color: Colors.blue.shade900,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            height: 1.25,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
         const SizedBox(height: 16),
         // Compact table view (avg confidence only; no counts)
         Card(

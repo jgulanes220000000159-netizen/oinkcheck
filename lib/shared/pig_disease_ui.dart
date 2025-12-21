@@ -139,6 +139,30 @@ class PigDiseaseUI {
     rows.sort((a, b) => metric(b).compareTo(metric(a)));
     return (rows.first['label'] ?? 'unknown').toString();
   }
+
+  /// Contagious grouping used for expert Pending filter.
+  /// Sunburn is not contagious; Healthy/Unknown are treated as non-contagious/unknown.
+  static bool isContagious(String label) {
+    final key = normalizeKey(label);
+    switch (key) {
+      case 'infected_environmental_sunburn':
+        return false;
+      case 'healthy':
+      case 'unknown':
+        return false;
+      // Treat all other known diseases as contagious for now.
+      case 'infected_bacterial_erysipelas':
+      case 'infected_bacterial_greasy':
+      case 'infected_fungal_ringworm':
+      case 'infected_parasitic_mange':
+      case 'infected_viral_foot_and_mouth':
+      case 'swine_pox':
+        return true;
+      default:
+        // Fallback: unknown -> not contagious
+        return false;
+    }
+  }
 }
 
 

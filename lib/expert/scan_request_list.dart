@@ -11,8 +11,19 @@ import '../shared/pig_disease_ui.dart';
 
 class ScanRequestList extends StatefulWidget {
   final int initialTabIndex;
+  final String mode; // 'both' | 'pending' | 'completed'
+  final bool showTabs;
+  final bool showAppBar;
+  final String? appBarTitle;
 
-  const ScanRequestList({Key? key, this.initialTabIndex = 0}) : super(key: key);
+  const ScanRequestList({
+    Key? key,
+    this.initialTabIndex = 0,
+    this.mode = 'both',
+    this.showTabs = true,
+    this.showAppBar = false,
+    this.appBarTitle,
+  }) : super(key: key);
 
   @override
   State<ScanRequestList> createState() => _ScanRequestListState();
@@ -20,24 +31,28 @@ class ScanRequestList extends StatefulWidget {
 
 class _ScanRequestListState extends State<ScanRequestList>
     with SingleTickerProviderStateMixin {
-  late TabController _tabController;
+  TabController? _tabController;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   List<Map<String, dynamic>> _pendingRequests = [];
   List<Map<String, dynamic>> _completedRequests = [];
+  String _pendingDiseaseFilter = 'all'; // all | contagious | non_contagious
   // Track which pending requests have been opened (to hide "New" badge)
   Set<String> _seenPendingIds = <String>{};
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    // Set initial tab based on parameter
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (widget.initialTabIndex < _tabController.length) {
-        _tabController.animateTo(widget.initialTabIndex);
-      }
-    });
+    if (widget.showTabs && widget.mode == 'both') {
+      _tabController = TabController(length: 2, vsync: this);
+      // Set initial tab based on parameter
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_tabController == null) return;
+        if (widget.initialTabIndex < _tabController!.length) {
+          _tabController!.animateTo(widget.initialTabIndex);
+        }
+      });
+    }
     _fetchRequests();
     _loadSeenPending();
   }
@@ -99,7 +114,7 @@ class _ScanRequestListState extends State<ScanRequestList>
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -221,28 +236,72 @@ class _ScanRequestListState extends State<ScanRequestList>
     );
   }
 
+  String _dominantDiseaseLabel(Map<String, dynamic> request) {
+    final summary =
+        (request['expertDiseaseSummary'] as List?) ??
+        (request['diseaseSummary'] as List?) ??
+        const [];
+    return PigDiseaseUI.dominantLabelFromSummary(summary, preferNonHealthy: true);
+  }
+
+  List<Map<String, dynamic>> _applyPendingDiseaseFilter(
+    List<Map<String, dynamic>> requests,
+  ) {
+    if (_pendingDiseaseFilter == 'all') return requests;
+    return requests.where((r) {
+      final label = _dominantDiseaseLabel(r);
+      final key = PigDiseaseUI.normalizeKey(label);
+      if (key.isEmpty || key == 'unknown') return false;
+      final contagious = PigDiseaseUI.isContagious(label);
+      if (_pendingDiseaseFilter == 'contagious') return contagious;
+      if (_pendingDiseaseFilter == 'non_contagious') return !contagious;
+      return true;
+    }).toList();
+  }
+
+  Widget _buildPendingFilterBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Row(
+        children: [
+          const Text(
+            'Filter:',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              value: _pendingDiseaseFilter,
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: Colors.grey[50],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'all', child: Text('All diseases')),
+                DropdownMenuItem(value: 'contagious', child: Text('Contagious')),
+                DropdownMenuItem(
+                  value: 'non_contagious',
+                  child: Text('Non-contagious'),
+                ),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _pendingDiseaseFilter = v);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRequestCard(Map<String, dynamic> request) {
-    final diseaseSummary = request['diseaseSummary'] as List<dynamic>;
-
-    // Find the dominant disease (highest count/percentage)
-    String dominantDiseaseKey = 'unknown';
-    if (diseaseSummary.isNotEmpty) {
-      // Sort by count to find the dominant disease
-      final sortedDiseases = List<Map<String, dynamic>>.from(diseaseSummary);
-      sortedDiseases.sort((a, b) {
-        final countA = a['count'] as int? ?? 0;
-        final countB = b['count'] as int? ?? 0;
-        return countB.compareTo(countA); // Descending order
-      });
-
-      final dominantDisease = sortedDiseases.first;
-      dominantDiseaseKey =
-          (dominantDisease['label'] ??
-                  dominantDisease['disease'] ??
-                  dominantDisease['name'] ??
-                  'unknown')
-              .toString();
-    }
+    final dominantDiseaseKey = _dominantDiseaseLabel(request);
     final isCompleted =
         request['status'] == 'reviewed' || request['status'] == 'completed';
     final userName = request['userName']?.toString() ?? '(No Name)';
@@ -1100,81 +1159,125 @@ class _ScanRequestListState extends State<ScanRequestList>
           if (dateB == null) return -1;
           return dateB.compareTo(dateA); // Descending
         });
-        final filteredPending = _filterRequests(
+        final filteredPending = _applyPendingDiseaseFilter(
+          _filterRequests(
           allRequests
               .where(
                 (r) =>
                     r['status'] == 'pending',
               )
               .toList(),
+        ),
         );
         // Filter completed requests to only show those reviewed by current expert
         final filteredCompleted = _filterRequests(
           allRequests
               .where(
                 (r) =>
-                    (r['status'] == 'reviewed' || r['status'] == 'completed') &&
+                    (r['status'] == 'completed') &&
                     (r['expertUid'] == currentExpertUid),
               )
               .toList(),
         );
         return Scaffold(
           backgroundColor: Colors.grey[50],
+          appBar:
+              widget.showAppBar
+                  ? AppBar(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                    title: Text(widget.appBarTitle ?? 'Requests'),
+                  )
+                  : null,
           body: Column(
             children: [
               _buildSearchBar(),
-              Container(
-                color: Colors.green,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TabBar(
-                        controller: _tabController,
-                        indicatorColor: Colors.white,
-                        labelColor: Colors.white,
-                        unselectedLabelColor: Colors.white70,
-                        tabs: [
-                          Tab(text: 'Pending (${filteredPending.length})'),
-                          Tab(text: 'Completed (${filteredCompleted.length})'),
-                        ],
+              if (widget.showTabs && widget.mode == 'both' && _tabController != null)
+                Container(
+                  color: Colors.green,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TabBar(
+                          controller: _tabController,
+                          indicatorColor: Colors.white,
+                          labelColor: Colors.white,
+                          unselectedLabelColor: Colors.white70,
+                          tabs: [
+                            Tab(text: 'Pending (${filteredPending.length})'),
+                            Tab(text: 'Completed (${filteredCompleted.length})'),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              // Removed separate totals row; counts are shown in tab labels
               Expanded(
-                child: TabBarView(
-                  controller: _tabController,
-                  children: [
-                    // Pending Requests
-                    filteredPending.isEmpty
-                        ? _buildEmptyState(
-                          _searchQuery.isNotEmpty
-                              ? 'No pending requests found for "$_searchQuery"'
-                              : 'No pending requests',
-                        )
-                        : ListView.builder(
-                          itemCount: filteredPending.length,
-                          itemBuilder: (context, index) {
-                            return _buildRequestCard(filteredPending[index]);
-                          },
+                child: (widget.mode == 'pending')
+                    ? Column(
+                      children: [
+                        _buildPendingFilterBar(),
+                        Expanded(
+                          child: filteredPending.isEmpty
+                              ? _buildEmptyState(
+                                _searchQuery.isNotEmpty
+                                    ? 'No pending requests found for "$_searchQuery"'
+                                    : 'No pending requests',
+                              )
+                              : ListView.builder(
+                                itemCount: filteredPending.length,
+                                itemBuilder: (context, index) =>
+                                    _buildRequestCard(filteredPending[index]),
+                              ),
                         ),
-                    // Completed Requests
-                    filteredCompleted.isEmpty
-                        ? _buildEmptyState(
-                          _searchQuery.isNotEmpty
-                              ? 'No completed requests found for "$_searchQuery"'
-                              : 'No completed requests',
-                        )
-                        : ListView.builder(
-                          itemCount: filteredCompleted.length,
-                          itemBuilder: (context, index) {
-                            return _buildRequestCard(filteredCompleted[index]);
-                          },
+                      ],
+                    )
+                    : (widget.mode == 'completed')
+                        ? (filteredCompleted.isEmpty
+                            ? _buildEmptyState(
+                              _searchQuery.isNotEmpty
+                                  ? 'No completed requests found for "$_searchQuery"'
+                                  : 'No completed requests',
+                            )
+                            : ListView.builder(
+                              itemCount: filteredCompleted.length,
+                              itemBuilder: (context, index) =>
+                                  _buildRequestCard(filteredCompleted[index]),
+                            ))
+                        : TabBarView(
+                          controller: _tabController!,
+                          children: [
+                            Column(
+                              children: [
+                                _buildPendingFilterBar(),
+                                Expanded(
+                                  child: filteredPending.isEmpty
+                                      ? _buildEmptyState(
+                                        _searchQuery.isNotEmpty
+                                            ? 'No pending requests found for "$_searchQuery"'
+                                            : 'No pending requests',
+                                      )
+                                      : ListView.builder(
+                                        itemCount: filteredPending.length,
+                                        itemBuilder: (context, index) =>
+                                            _buildRequestCard(filteredPending[index]),
+                                      ),
+                                ),
+                              ],
+                            ),
+                            filteredCompleted.isEmpty
+                                ? _buildEmptyState(
+                                  _searchQuery.isNotEmpty
+                                      ? 'No completed requests found for "$_searchQuery"'
+                                      : 'No completed requests',
+                                )
+                                : ListView.builder(
+                                  itemCount: filteredCompleted.length,
+                                  itemBuilder: (context, index) =>
+                                      _buildRequestCard(filteredCompleted[index]),
+                                ),
+                          ],
                         ),
-                  ],
-                ),
               ),
             ],
           ),

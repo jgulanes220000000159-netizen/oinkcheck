@@ -12,9 +12,16 @@ import 'dart:async'; // Added for StreamSubscription
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'expert_chat_inbox_page.dart';
+import '../head_veterinarian/vet_manage_treatments_page.dart';
+import 'expert_notifications_page.dart';
 
 class ExpertDashboard extends StatefulWidget {
-  const ExpertDashboard({Key? key}) : super(key: key);
+  const ExpertDashboard({Key? key, this.treatmentsPageOverride})
+    : super(key: key);
+
+  /// Allows roles like veterinarian to reuse the exact Expert dashboard UX,
+  /// but swap only the "Manage Treatments" tab.
+  final Widget? treatmentsPageOverride;
 
   @override
   State<ExpertDashboard> createState() => _ExpertDashboardState();
@@ -28,29 +35,46 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
   StreamSubscription? _seenPendingWatch;
 
   List<Widget> _pages = [];
+  bool _isVet = false;
 
   @override
   void initState() {
     super.initState();
+    _loadRoleAndUpdatePages();
     _updatePages();
     // Start live unseen pending subscription; do not preload stale counts
     _subscribePendingUnseen();
   }
 
+  Future<void> _loadRoleAndUpdatePages() async {
+    try {
+      final box = await Hive.openBox('userBox');
+      final profile = box.get('userProfile');
+      final role = (profile is Map ? profile['role'] : null)?.toString() ?? '';
+      final isVetRole = role == 'veterinarian' || role == 'head_veterinarian';
+      if (!mounted) return;
+      if (_isVet != isVetRole) {
+        setState(() {
+          _isVet = isVetRole;
+          _updatePages();
+        });
+      }
+    } catch (_) {
+      // Best-effort; keep default behavior.
+    }
+  }
+
   void _updatePages() {
+    final Widget treatmentsPage =
+        widget.treatmentsPageOverride ??
+        (_isVet ? const VetManageTreatmentsPage() : TreatmentEditorPage());
     _pages = <Widget>[
       ExpertHomePage(), // Home tab
       ScanRequestList(initialTabIndex: _requestsInitialTab), // Requests tab
-      TreatmentEditorPage(), // Manage Treatments tab
+      treatmentsPage, // Manage Treatments tab
       ExpertProfile(), // Profile tab
       const DiseaseMapPage(), // Disease Map (same as farmer; starts zoomed to Davao del Norte)
     ];
-  }
-
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
   }
 
   // Load notification count from Hive
@@ -125,15 +149,6 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
 
   // Clear notifications when Requests tab is clicked
   // Removed: do not clear on navigation; clearing happens per-card open
-
-  void _navigateToRequests(int tabIndex) {
-    setState(() {
-      _requestsInitialTab = tabIndex;
-      _selectedIndex = 1; // Switch to Requests tab
-      _updatePages();
-    });
-    // Do not auto-clear; Clear when opening individual pending card
-  }
 
   bool _canGoBack() {
     return _selectedIndex != 0; // Can go back if not on home page
@@ -366,10 +381,12 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
                   const SizedBox(width: 10),
                   InkWell(
                     onTap: () {
-                      // Navigate to notifications/requests
-                      setState(() {
-                        _selectedIndex = 1;
-                      });
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ExpertNotificationsPage(),
+                        ),
+                      );
                     },
                     borderRadius: BorderRadius.circular(12),
                     child: Container(
@@ -427,11 +444,6 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
   }
 }
 
-// Navigate to page helper
-void _navigateToPage(BuildContext context, Widget page) {
-  Navigator.push(context, MaterialPageRoute(builder: (context) => page));
-}
-
 // Expert Home Page Widget
 class ExpertHomePage extends StatefulWidget {
   const ExpertHomePage({Key? key}) : super(key: key);
@@ -441,9 +453,6 @@ class ExpertHomePage extends StatefulWidget {
 }
 
 class _ExpertHomePageState extends State<ExpertHomePage> {
-  int _totalCompleted = 0;
-  int _pendingRequests = 0;
-  String _expertName = 'Expert';
   // double _averageResponseTime = 0.0; // superseded by filtered average
   List<Map<String, dynamic>> _recentReviews = [];
   List<Map<String, dynamic>> _recentRequests = []; // For summary table
@@ -460,6 +469,7 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
   int? _lastStreamDocsCount;
 
   // Filter reviews according to the selected range
+  // ignore: unused_element
   List<Map<String, dynamic>> _filterReviewsForRange() {
     if (_recentReviews.isEmpty) return const [];
     final today = DateTime.now();
@@ -523,16 +533,6 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
     )..sort((a, b) => (a['date'] as DateTime).compareTo(b['date'] as DateTime));
   }
 
-  double _filteredAverageHours() {
-    final filtered = _filterReviewsForRange();
-    if (filtered.isEmpty) return 0.0;
-    final total = filtered.fold<double>(
-      0.0,
-      (sum, r) => sum + ((r['responseTime'] as num?)?.toDouble() ?? 0.0),
-    );
-    return total / filtered.length;
-  }
-
   // Debug tracking variables
   // int _lastPendingCount = 0; // removed: do not override badge from here
   // int _lastCompletedCount = 0; // unused
@@ -571,10 +571,6 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
 
       if (cachedData != null && mounted) {
         setState(() {
-          _expertName = cachedData['expertName'] ?? 'Expert';
-          _totalCompleted = cachedData['totalCompleted'] ?? 0;
-          _pendingRequests = cachedData['pendingRequests'] ?? 0;
-
           // Parse cached reviews and ensure dates are DateTime objects
           final cachedReviews = List<Map<String, dynamic>>.from(
             cachedData['recentReviews'] ?? [],
@@ -673,6 +669,7 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
     } catch (_) {}
   }
 
+  // ignore: unused_element
   Future<void> _saveMonthly(int year, int month) async {
     try {
       final box = await Hive.openBox('expertFilterBox');
@@ -681,6 +678,7 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
     } catch (_) {}
   }
 
+  // ignore: unused_element
   Future<DateTime?> _showMonthYearPicker({
     required BuildContext context,
     required DateTime initialDate,
@@ -857,6 +855,7 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
     );
   }
 
+  // ignore: unused_element
   Future<void> _pickCustomRange() async {
     final initialRange =
         _customStartDate != null && _customEndDate != null
@@ -925,15 +924,6 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
                 // IMPORTANT: discussions (pending_review) are handled in Chatbox, not Pending.
                 .where('status', whereIn: ['pending'])
                 .get();
-
-        // Filter to show requests that are either assigned to this expert OR unassigned
-        final pendingDocs =
-            pendingQuery.docs.where((doc) {
-              final data = doc.data();
-              final expertUid = data['expertUid'];
-              // Show if assigned to this expert OR if no expert assigned yet
-              return expertUid == null || expertUid == user.uid;
-            }).toList();
 
         // Calculate average response time
         double totalResponseTime = 0.0;
@@ -1006,9 +996,6 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
         await statsBox.put('expertStats', statsData);
 
         setState(() {
-          _expertName = expertName;
-          _totalCompleted = completedQuery.docs.length;
-          _pendingRequests = pendingDocs.length;
           // Keep computing average for caching/debug, but UI uses filtered average
           _recentReviews = recentReviews;
           _isOffline = false;
@@ -1032,10 +1019,6 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
 
       if (cachedData != null) {
         setState(() {
-          _expertName = cachedData['expertName'] ?? 'Expert';
-          _totalCompleted = cachedData['totalCompleted'] ?? 0;
-          _pendingRequests = cachedData['pendingRequests'] ?? 0;
-
           // Parse cached reviews and ensure dates are DateTime objects
           final cachedReviews = List<Map<String, dynamic>>.from(
             cachedData['recentReviews'] ?? [],
@@ -1203,9 +1186,6 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
           }).toList();
 
       setState(() {
-        _expertName = expertName;
-        _totalCompleted = completedDocs.length;
-        _pendingRequests = pendingDocs.length;
         // Keep computing average for caching/debug, but UI uses filtered average
         _recentReviews = recentReviews;
         _recentRequests = recentRequestsList;
@@ -1245,6 +1225,7 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
   }
 
   // Helper function to get performance feedback based on response time
+  // ignore: unused_element
   Map<String, dynamic> _getPerformanceFeedback(double hours) {
     if (hours == 0) {
       return {
@@ -1286,6 +1267,7 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
   }
 
   // Show dialog with performance targets and what to achieve
+  // ignore: unused_element
   void _showPerformanceTargetsDialog(BuildContext context, double currentAvg) {
     // Define performance levels
     final performanceLevels = [
@@ -1727,16 +1709,18 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
                         Icons.description,
                         Colors.green,
                         () {
-                          final dashboard =
-                              context
-                                  .findAncestorStateOfType<
-                                    _ExpertDashboardState
-                                  >();
-                          dashboard?.setState(() {
-                            dashboard._requestsInitialTab = 0; // Pending tab
-                            dashboard._selectedIndex = 1; // Requests page
-                            dashboard._updatePages();
-                          });
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder:
+                                  (_) => const ScanRequestList(
+                                    mode: 'pending',
+                                    showTabs: false,
+                                    showAppBar: true,
+                                    appBarTitle: 'Submitted Reports',
+                                  ),
+                            ),
+                          );
                         },
                       ),
                     ),
@@ -1748,16 +1732,18 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
                         Icons.check_circle,
                         const Color(0xFF00BCD4), // Teal color
                         () {
-                          final dashboard =
-                              context
-                                  .findAncestorStateOfType<
-                                    _ExpertDashboardState
-                                  >();
-                          dashboard?.setState(() {
-                            dashboard._requestsInitialTab = 1; // Completed tab
-                            dashboard._selectedIndex = 1; // Requests page
-                            dashboard._updatePages();
-                          });
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder:
+                                  (_) => const ScanRequestList(
+                                    mode: 'completed',
+                                    showTabs: false,
+                                    showAppBar: true,
+                                    appBarTitle: 'Validated Reports',
+                                  ),
+                            ),
+                          );
                         },
                       ),
                     ),

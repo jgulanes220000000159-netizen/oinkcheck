@@ -1488,6 +1488,46 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
+                      const SizedBox(height: 10),
+                      if (isCompleted &&
+                          widget.request['expertDiseaseSummaryChangeLog'] != null)
+                        Builder(
+                          builder: (context) {
+                            final log =
+                                widget.request['expertDiseaseSummaryChangeLog'];
+                            if (log is! Map) return const SizedBox.shrink();
+                            final msg = (log['message'] ?? '').toString().trim();
+                            if (msg.isEmpty) return const SizedBox.shrink();
+                            return Card(
+                              color: Colors.blue.shade50,
+                              elevation: 0,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.info_outline,
+                                      color: Colors.blue.shade700,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Text(
+                                        msg,
+                                        style: TextStyle(
+                                          color: Colors.blue.shade900,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          height: 1.25,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
                       const SizedBox(height: 16),
                       ...sortedSummary.map<Widget>((d) {
                         final label = (d['label'] ?? 'unknown').toString();
