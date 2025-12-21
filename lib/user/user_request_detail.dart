@@ -22,70 +22,6 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
   bool _showBoundingBoxes = true;
   static const double _recommendationAvgThreshold = 0.70;
 
-  String _translatePreventiveMeasure(String english) {
-    // Map known expert defaults to localization keys
-    final Map<String, String> map = {
-      'Regular pruning': 'pm_regular_pruning',
-      'Proper spacing between plants': 'pm_proper_spacing',
-      'Adequate ventilation': 'pm_adequate_ventilation',
-      'Regular watering': 'pm_regular_watering',
-      'Proper fertilization': 'pm_proper_fertilization',
-      'Pest monitoring': 'pm_pest_monitoring',
-      'Soil testing': 'pm_soil_testing',
-      'Crop rotation': 'pm_crop_rotation',
-      'Remove infected leaves': 'pm_remove_infected_leaves',
-      'Improve air circulation': 'pm_improve_air_circulation',
-    };
-
-    final key = map[english];
-    if (key != null) {
-      return tr(key);
-    }
-    // Fallback: return original text if we don't recognize it
-    return english;
-  }
-
-  // Check if treatment plan has any content
-  bool _hasTreatmentContent(Map<String, dynamic>? treatmentPlan) {
-    if (treatmentPlan == null) return false;
-    
-    final recommendations = treatmentPlan['recommendations'] as List?;
-    if (recommendations == null || recommendations.isEmpty) return false;
-    
-    // Check if any recommendation has actual content
-    for (var rec in recommendations) {
-      if (rec == null) continue;
-      final treatment = rec['treatment']?.toString().trim() ?? '';
-      final dosage = rec['dosage']?.toString().trim() ?? '';
-      final frequency = rec['frequency']?.toString().trim() ?? '';
-      final precautions = rec['precautions']?.toString().trim() ?? '';
-      
-      if (treatment.isNotEmpty || dosage.isNotEmpty || 
-          frequency.isNotEmpty || precautions.isNotEmpty) {
-        return true;
-      }
-    }
-    
-    return false;
-  }
-
-  // Check if preventive measures has any content
-  bool _hasPreventiveMeasures(Map<String, dynamic>? treatmentPlan) {
-    if (treatmentPlan == null) return false;
-    
-    final measures = treatmentPlan['preventiveMeasures'] as List?;
-    if (measures == null || measures.isEmpty) return false;
-    
-    // Check if any measure has actual content
-    for (var measure in measures) {
-      if (measure?.toString().trim().isNotEmpty ?? false) {
-        return true;
-      }
-    }
-    
-    return false;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -93,9 +29,13 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
   }
 
   /// Returns per-disease avg/max confidence.
-  /// Prefers request.diseaseSummary.avgConfidence when present; falls back to image detections.
+  /// Prefers request.expertDiseaseSummary when present; else request.diseaseSummary;
+  /// falls back to image detections.
   List<Map<String, dynamic>> _getDiseaseConfidenceSummary() {
-    final summary = (widget.request['diseaseSummary'] as List?) ?? const [];
+    final summary =
+        (widget.request['expertDiseaseSummary'] as List?) ??
+        (widget.request['diseaseSummary'] as List?) ??
+        const [];
 
     final List<Map<String, dynamic>> fromSummary = [];
     for (final e in summary) {
@@ -616,7 +556,7 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                                   : (status == 'tracking'
                                       ? tr('tracking')
                                       : (status == 'pending_review'
-                                          ? tr('pending_review')
+                                          ? tr('pending')
                                           : tr('pending'))),
                               style: TextStyle(
                                 color:
@@ -677,6 +617,41 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Colors.green,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      if (isCompleted && expertReview != null) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.person,
+                              size: 16,
+                              color: Colors.green,
+                            ),
+                            const SizedBox(width: 4),
+                            const Text(
+                              'Reviewed by',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.black54,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                (expertName.toString().trim().isNotEmpty)
+                                    ? expertName.toString().trim()
+                                    : 'Expert',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.green,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
                             ),
                           ],
@@ -1521,8 +1496,11 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                         final color = _getExpertDiseaseColor(label);
                         final isHealthy = PigDiseaseUI.normalizeKey(label) == 'healthy';
                         final isUnknown = PigDiseaseUI.normalizeKey(label) == 'unknown';
-                        final canShowRecommendation =
-                            !isHealthy && !isUnknown && avg >= _recommendationAvgThreshold;
+                        // If this report is completed, it was expert-validated already,
+                        // so always allow recommendations (except for healthy/unknown).
+                        final canShowRecommendation = !isHealthy &&
+                            !isUnknown &&
+                            (isCompleted || avg >= _recommendationAvgThreshold);
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           child: Padding(
@@ -1670,218 +1648,28 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.person, color: Colors.green, size: 18),
-                        const SizedBox(width: 6),
-                        Text(
-                          tr(
-                            'reviewed_by',
-                            namedArgs: {
-                              'name':
-                                  expertName.isNotEmpty ? expertName : 'Expert',
-                            },
-                          ),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Colors.green,
-                            fontSize: 15,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
                     Text(
-                      tr('expert_review'),
+                      tr('expert_comment'),
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    // Severity Assessment
-                    if (expertReview['severityAssessment'] != null)
+                    const SizedBox(height: 12),
+                    if ((expertReview['comment'] ?? '').toString().trim().isNotEmpty)
                       Card(
                         child: Padding(
                           padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tr('severity_assessment'),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.warning,
-                                    color: _getSeverityColor(
-                                      expertReview['severityAssessment']['level'] ??
-                                          'low',
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _formatSeverityLevel(
-                                      (expertReview['severityAssessment']['level'] ??
-                                              'low')
-                                          .toString(),
-                                    ),
-                                    style: TextStyle(
-                                      color: _getSeverityColor(
-                                        expertReview['severityAssessment']['level'] ??
-                                            'low',
-                                      ),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                          child: Text(
+                            (expertReview['comment'] ?? '').toString().trim(),
+                            style: const TextStyle(
+                              fontSize: 15,
+                              color: Colors.black87,
+                            ),
                           ),
                         ),
-                      ),
-                    const SizedBox(height: 16),
-                    // Treatment Plan (only show if has content)
-                    if (_hasTreatmentContent(expertReview['treatmentPlan']))
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tr('treatment_plan'),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              ...((expertReview['treatmentPlan']['recommendations']
-                                          as List?) ??
-                                      [])
-                                  .map<Widget>((treatment) {
-                                    return Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        if (treatment['treatment'] != null &&
-                                            treatment['treatment']
-                                                .toString()
-                                                .trim()
-                                                .isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 4,
-                                            ),
-                                            child: Text(
-                                              '${tr('treatment')} ${treatment['treatment']}',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w500,
-                                              ),
-                                            ),
-                                          ),
-                                        if (treatment['dosage'] != null &&
-                                            treatment['dosage']
-                                                .toString()
-                                                .trim()
-                                                .isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 4,
-                                            ),
-                                            child: Text(
-                                              '${tr('dosage')} ${treatment['dosage']}',
-                                            ),
-                                          ),
-                                        if (treatment['frequency'] != null &&
-                                            treatment['frequency']
-                                                .toString()
-                                                .trim()
-                                                .isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 4,
-                                            ),
-                                            child: Text(
-                                              '${tr('frequency')} ${treatment['frequency']}',
-                                            ),
-                                          ),
-                                        if (treatment['precautions'] != null &&
-                                            treatment['precautions']
-                                                .toString()
-                                                .trim()
-                                                .isNotEmpty)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 4,
-                                            ),
-                                            child: Text(
-                                              '${tr('precautions')} ${treatment['precautions']}',
-                                            ),
-                                          ),
-                                        const SizedBox(height: 8),
-                                      ],
-                                    );
-                                  })
-                                  .toList(),
-                            ],
-                          ),
-                        ),
-                      ),
-                    if (_hasTreatmentContent(expertReview['treatmentPlan']))
-                      const SizedBox(height: 16),
-                    // Preventive Measures (only show if has content)
-                    if (_hasPreventiveMeasures(expertReview['treatmentPlan']))
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tr('preventive_measures'),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children:
-                                    ((expertReview['treatmentPlan']['preventiveMeasures']
-                                                as List?) ??
-                                            [])
-                                        .map<Widget>((measure) {
-                                          return Chip(
-                                            label: Text(
-                                              _translatePreventiveMeasure(
-                                                measure.toString(),
-                                              ),
-                                            ),
-                                            backgroundColor: Colors.green
-                                                .withOpacity(0.1),
-                                          );
-                                        })
-                                        .toList(),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    if (_hasPreventiveMeasures(expertReview['treatmentPlan']))
-                      const SizedBox(height: 16),
-                    // Info message if both treatment and preventive measures are empty
-                    if (!_hasTreatmentContent(expertReview['treatmentPlan']) &&
-                        !_hasPreventiveMeasures(expertReview['treatmentPlan']))
+                      )
+                    else
                       Card(
                         color: Colors.blue.shade50,
                         child: Padding(
@@ -1891,46 +1679,17 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                               Icon(
                                 Icons.info_outline,
                                 color: Colors.blue.shade700,
-                                size: 24,
+                                size: 22,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text(
-                                  tr('no_treatment_details_note'),
+                                  'No comment was provided by the expert for this report.',
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: Colors.blue.shade900,
+                                    fontWeight: FontWeight.w600,
                                   ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    if (!_hasTreatmentContent(expertReview['treatmentPlan']) &&
-                        !_hasPreventiveMeasures(expertReview['treatmentPlan']))
-                      const SizedBox(height: 16),
-                    // Expert Comment
-                    if (expertReview['comment'] != null)
-                      Card(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                tr('expert_comment'),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                expertReview['comment'],
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  color: Colors.black87,
                                 ),
                               ),
                             ],
@@ -1958,32 +1717,6 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
         ),
       ),
     );
-  }
-
-  Color _getSeverityColor(String severity) {
-    switch (severity.toLowerCase()) {
-      case 'high':
-        return Colors.red;
-      case 'medium':
-        return Colors.orange;
-      case 'low':
-        return Colors.green;
-      default:
-        return Colors.grey;
-    }
-  }
-
-  String _formatSeverityLevel(String severity) {
-    switch (severity.toLowerCase()) {
-      case 'high':
-        return tr('severity_high');
-      case 'medium':
-        return tr('severity_medium');
-      case 'low':
-        return tr('severity_low');
-      default:
-        return severity.toUpperCase();
-    }
   }
 
   Color _getExpertDiseaseColor(String diseaseName) {

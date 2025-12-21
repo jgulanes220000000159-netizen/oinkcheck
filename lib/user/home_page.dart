@@ -1271,8 +1271,10 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
+    // Prefer expert-edited summary if available.
     final diseaseSummary =
-        (data['diseaseSummary'] as List<dynamic>?)
+        ((data['expertDiseaseSummary'] ?? data['diseaseSummary'])
+                as List<dynamic>?)
             ?.cast<Map<String, dynamic>>() ??
         [];
 
@@ -1294,9 +1296,10 @@ class _HomePageState extends State<HomePage> {
         statusText = tr('tracking');
         break;
       case 'pending_review':
-        statusColor = Colors.blue;
-        statusIcon = Icons.rate_review;
-        statusText = tr('pending_review');
+        // Farmer-side UX: if experts are discussing, the farmer should still see it as "Pending".
+        statusColor = Colors.orange;
+        statusIcon = Icons.pending;
+        statusText = tr('pending');
         break;
       default:
         statusColor = Colors.orange;

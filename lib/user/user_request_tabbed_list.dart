@@ -233,11 +233,19 @@ class _UserRequestTabbedListState extends State<UserRequestTabbedList>
           );
         }
 
+        // Farmer-side UX: if experts move a request to discussion (`pending_review`),
+        // the farmer should still see it as Pending.
         final pending = _filterRequests(
-          allRequests.where((r) => r['status'] == 'pending').toList(),
+          allRequests
+              .where(
+                (r) => r['status'] == 'pending' || r['status'] == 'pending_review',
+              )
+              .toList(),
         );
         final completed = _filterRequests(
-          allRequests.where((r) => r['status'] == 'completed').toList(),
+          allRequests
+              .where((r) => r['status'] == 'completed' || r['status'] == 'reviewed')
+              .toList(),
         );
         return Column(
           children: [
@@ -365,10 +373,16 @@ class _UserRequestTabbedListState extends State<UserRequestTabbedList>
 
         final cachedRequests = snapshot.data!;
         final pending = _filterRequests(
-          cachedRequests.where((r) => r['status'] == 'pending').toList(),
+          cachedRequests
+              .where(
+                (r) => r['status'] == 'pending' || r['status'] == 'pending_review',
+              )
+              .toList(),
         );
         final completed = _filterRequests(
-          cachedRequests.where((r) => r['status'] == 'completed').toList(),
+          cachedRequests
+              .where((r) => r['status'] == 'completed' || r['status'] == 'reviewed')
+              .toList(),
         );
 
         return Column(

@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../shared/pig_disease_ui.dart';
@@ -74,7 +75,10 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
 
       final reqSnap = await _reqRef.get();
       final req = reqSnap.data() ?? <String, dynamic>{};
-      final summary = (req['diseaseSummary'] as List?) ?? const [];
+      final summary =
+          (req['expertDiseaseSummary'] as List?) ??
+          (req['diseaseSummary'] as List?) ??
+          const [];
       final fixed = PigDiseaseUI.dominantLabelFromSummary(
         summary,
         preferNonHealthy: true,
@@ -85,6 +89,384 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
       await _discRef.set({'diseaseLabel': fixed}, SetOptions(merge: true));
     } catch (_) {
       // Best-effort; ignore.
+    }
+  }
+
+  List<Map<String, dynamic>> _normalizeAndMergeSummary(List<Map<String, dynamic>> input) {
+    final Map<String, Map<String, dynamic>> agg = {};
+    for (final row in input) {
+      final labelRaw =
+          (row['label'] ?? row['disease'] ?? row['name'] ?? 'unknown').toString();
+      final label = PigDiseaseUI.normalizeKey(labelRaw);
+      if (label.isEmpty) continue;
+
+      final avg = (row['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+      final mx = (row['maxConfidence'] as num?)?.toDouble() ?? avg;
+      final cnt = (row['count'] as num?)?.toInt() ?? 1;
+
+      if (!agg.containsKey(label)) {
+        agg[label] = {
+          'label': label,
+          'name': PigDiseaseUI.displayName(label),
+          'avgConfidence': avg,
+          'maxConfidence': mx,
+          'count': cnt,
+        };
+      } else {
+        final cur = agg[label]!;
+        final curCnt = (cur['count'] as num?)?.toInt() ?? 1;
+        final totalCnt = curCnt + cnt;
+        final curAvg = (cur['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+        final newAvg =
+            totalCnt == 0 ? 0.0 : ((curAvg * curCnt) + (avg * cnt)) / totalCnt;
+        final curMax = (cur['maxConfidence'] as num?)?.toDouble() ?? curAvg;
+        cur['avgConfidence'] = newAvg;
+        cur['maxConfidence'] = math.max(curMax, mx);
+        cur['count'] = totalCnt;
+      }
+    }
+    final out = agg.values.toList();
+    out.sort((a, b) {
+      final aAvg = (a['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+      final bAvg = (b['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+      return bAvg.compareTo(aAvg);
+    });
+    return out;
+  }
+
+  List<Map<String, dynamic>> _getDiseaseConfidenceSummary(Map<String, dynamic> req) {
+    final summary =
+        (req['expertDiseaseSummary'] as List?) ??
+        (req['diseaseSummary'] as List?) ??
+        const [];
+
+    final List<Map<String, dynamic>> fromSummary = [];
+    for (final e in summary) {
+      if (e is! Map) continue;
+      final avg = (e['avgConfidence'] as num?)?.toDouble();
+      final mx = (e['maxConfidence'] as num?)?.toDouble();
+      if (avg == null) continue;
+      final label =
+          (e['label'] ?? e['disease'] ?? e['name'] ?? 'unknown').toString();
+      fromSummary.add({
+        'label': PigDiseaseUI.normalizeKey(label),
+        'avgConfidence': avg,
+        'maxConfidence': mx ?? avg,
+        'count': (e['count'] as num?)?.toInt() ?? 1,
+      });
+    }
+    if (fromSummary.isNotEmpty) return fromSummary;
+
+    // Fallback: compute from image detections under images[].results[]
+    final images = (req['images'] as List?) ?? const [];
+    final Map<String, double> sum = {};
+    final Map<String, int> n = {};
+    final Map<String, double> max = {};
+    for (final img in images) {
+      if (img is! Map) continue;
+      final results = (img['results'] as List?) ?? const [];
+      for (final d in results) {
+        if (d is! Map) continue;
+        final raw = (d['disease'] ?? d['label'] ?? 'unknown').toString();
+        final conf = (d['confidence'] as num?)?.toDouble();
+        if (conf == null) continue;
+        final key = PigDiseaseUI.normalizeKey(raw);
+        sum[key] = (sum[key] ?? 0) + conf;
+        n[key] = (n[key] ?? 0) + 1;
+        final prev = max[key] ?? 0.0;
+        if (conf > prev) max[key] = conf;
+      }
+    }
+    final out = <Map<String, dynamic>>[];
+    for (final entry in n.entries) {
+      final key = entry.key;
+      final cnt = entry.value;
+      if (cnt <= 0) continue;
+      final avg = (sum[key] ?? 0.0) / cnt;
+      out.add({
+        'label': key,
+        'avgConfidence': avg,
+        'maxConfidence': max[key] ?? avg,
+        'count': cnt,
+      });
+    }
+    out.sort((a, b) {
+      final aAvg = (a['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+      final bAvg = (b['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+      return bAvg.compareTo(aAvg);
+    });
+    return out;
+  }
+
+  Future<List<Map<String, dynamic>>?> _showEditSummarySheet(
+    BuildContext context,
+    List<Map<String, dynamic>> current,
+  ) async {
+    final List<Map<String, dynamic>> working =
+        _normalizeAndMergeSummary(current).map((e) => Map<String, dynamic>.from(e)).toList();
+
+    final options = PigDiseaseUI.diseaseColors.keys
+        .where((k) => k != 'unknown')
+        .toList(growable: false);
+
+    return showModalBottomSheet<List<Map<String, dynamic>>>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setStateSheet) {
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                ),
+                child: SizedBox(
+                  height: MediaQuery.of(ctx).size.height * 0.70,
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Edit Report Result',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Add disease',
+                              onPressed: () async {
+                                final used = working
+                                    .map(
+                                      (e) => PigDiseaseUI.normalizeKey(
+                                        (e['label'] ?? e['disease'] ?? e['name'] ?? '')
+                                            .toString(),
+                                      ),
+                                    )
+                                    .where((k) => k.isNotEmpty)
+                                    .toSet();
+                                final available =
+                                    options.where((k) => !used.contains(k)).toList();
+                                if (available.isEmpty) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('All diseases are already listed.'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                String picked = available.first;
+                                final res = await showDialog<String>(
+                                  context: ctx,
+                                  builder: (dctx) {
+                                    return AlertDialog(
+                                      title: const Text('Add disease'),
+                                      content: StatefulBuilder(
+                                        builder: (dctx, setStateInner) {
+                                          return DropdownButtonFormField<String>(
+                                            value: picked,
+                                            isExpanded: true,
+                                            items: available
+                                                .map(
+                                                  (k) => DropdownMenuItem<String>(
+                                                    value: k,
+                                                    child: Text(PigDiseaseUI.displayName(k)),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: (v) => setStateInner(() {
+                                              picked = v ?? picked;
+                                            }),
+                                          );
+                                        },
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(dctx),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        ElevatedButton(
+                                          onPressed: () => Navigator.pop(dctx, picked),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.green,
+                                            foregroundColor: Colors.white,
+                                          ),
+                                          child: const Text('Add'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                                if (res == null) return;
+                                setStateSheet(() {
+                                  working.add({
+                                    'label': res,
+                                    'name': PigDiseaseUI.displayName(res),
+                                    'avgConfidence': 0.0,
+                                    'maxConfidence': 0.0,
+                                    'count': 1,
+                                  });
+                                });
+                              },
+                              icon: const Icon(Icons.add_circle_outline),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancel'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(ctx, _normalizeAndMergeSummary(working));
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Apply'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: working.length,
+                          itemBuilder: (ctx, i) {
+                            final row = working[i];
+                            final label = (row['label'] ?? 'unknown').toString();
+                            final key = PigDiseaseUI.normalizeKey(label);
+                            final avg = (row['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+                            final mx = (row['maxConfidence'] as num?)?.toDouble() ?? avg;
+                            final usedOther = working
+                                .asMap()
+                                .entries
+                                .where((e) => e.key != i)
+                                .map(
+                                  (e) => PigDiseaseUI.normalizeKey(
+                                    (e.value['label'] ??
+                                            e.value['disease'] ??
+                                            e.value['name'] ??
+                                            '')
+                                        .toString(),
+                                  ),
+                                )
+                                .where((k) => k.isNotEmpty)
+                                .toSet();
+                            final rowOptions = options
+                                .where((k) => k == key || !usedOther.contains(k))
+                                .toList(growable: false);
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: DropdownButtonFormField<String>(
+                                            value: rowOptions.contains(key)
+                                                ? key
+                                                : rowOptions.first,
+                                            isExpanded: true,
+                                            items: rowOptions
+                                                .map(
+                                                  (k) => DropdownMenuItem<String>(
+                                                    value: k,
+                                                    child: Text(PigDiseaseUI.displayName(k)),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: (v) {
+                                              if (v == null) return;
+                                              if (usedOther.contains(v)) {
+                                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'That disease is already listed.',
+                                                    ),
+                                                    backgroundColor: Colors.orange,
+                                                  ),
+                                                );
+                                                return;
+                                              }
+                                              setStateSheet(() {
+                                                row['label'] = v;
+                                                row['name'] = PigDiseaseUI.displayName(v);
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        IconButton(
+                                          tooltip: 'Remove disease',
+                                          onPressed: () {
+                                            setStateSheet(() {
+                                              working.removeAt(i);
+                                            });
+                                          },
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.redAccent,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Avg ${(avg * 100).toStringAsFixed(1)}% • Max ${(mx * 100).toStringAsFixed(1)}%',
+                                      style: TextStyle(
+                                        color: Colors.grey[700],
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _saveEditedSummaryToFirestore(List<Map<String, dynamic>> edited) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null || uid.isEmpty) return;
+    final nowIso = DateTime.now().toIso8601String();
+    await _reqRef.update({
+      'expertDiseaseSummary': _normalizeAndMergeSummary(edited),
+      'expertDiseaseSummaryUpdatedAt': nowIso,
+      'expertDiseaseSummaryByUid': uid,
+      'expertDiseaseSummaryByName': widget.myName,
+    });
+    // Keep discussion header disease label aligned with edited summary
+    final dominant = PigDiseaseUI.dominantLabelFromSummary(
+      _normalizeAndMergeSummary(edited),
+      preferNonHealthy: true,
+    );
+    if (dominant.trim().isNotEmpty) {
+      await _discRef.set({'diseaseLabel': dominant}, SetOptions(merge: true));
     }
   }
 
@@ -287,14 +669,13 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
   }
 
   List<Map<String, dynamic>> _getDiseaseStats(Map<String, dynamic> req) {
-    final summary = (req['diseaseSummary'] as List?) ?? const [];
+    final rows = _getDiseaseConfidenceSummary(req);
     final out = <Map<String, dynamic>>[];
-    for (final e in summary) {
-      if (e is! Map) continue;
-      final avg = (e['avgConfidence'] as num?)?.toDouble();
+    for (final r in rows) {
+      final label = (r['label'] ?? 'unknown').toString();
+      final avg = (r['avgConfidence'] as num?)?.toDouble();
       if (avg == null) continue;
-      final mx = (e['maxConfidence'] as num?)?.toDouble() ?? avg;
-      final label = (e['label'] ?? e['disease'] ?? e['name'] ?? 'unknown').toString();
+      final mx = (r['maxConfidence'] as num?)?.toDouble() ?? avg;
       out.add({'label': label, 'avg': avg, 'max': mx});
     }
     out.sort((a, b) => (b['avg'] as double).compareTo(a['avg'] as double));
@@ -546,9 +927,6 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
                           final userName = (data['userName'] ?? 'Farmer').toString();
                           final status = (data['status'] ?? 'open').toString();
                           final color = PigDiseaseUI.colorFor(diseaseLabel);
-                          final requestIdShort = widget.requestId.length > 10
-                              ? widget.requestId.substring(0, 10)
-                              : widget.requestId;
 
                           final createdByUid = (data['createdByUid'] ?? '').toString();
                           final createdByName =
@@ -593,7 +971,7 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
                                           ),
                                           const SizedBox(height: 2),
                                           Text(
-                                            'Discussing report: $userName • ID $requestIdShort…',
+                                            'Report from: $userName',
                                             style: TextStyle(
                                               color: Colors.grey[700],
                                               fontSize: 12,
@@ -628,32 +1006,98 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
                                 ),
                                 const SizedBox(height: 12),
                                 // Participants UI removed (per request)
-                                Row(
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Expanded(
-                                      child: Text(
-                                        'Owner: $createdByName',
-                                        style: TextStyle(
-                                          color: Colors.grey[700],
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.verified_user_outlined,
+                                          size: 16,
+                                          color: Colors.green,
                                         ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            'Owner: $createdByName',
+                                            style: TextStyle(
+                                              color: Colors.grey[800],
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    if (status != 'closed' && isOwner)
-                                      ElevatedButton.icon(
-                                        onPressed: () => _showResolveDialog(
-                                          createdByUid: createdByUid,
-                                          createdByName: createdByName,
-                                        ),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.green,
-                                          foregroundColor: Colors.white,
-                                        ),
-                                        icon: const Icon(Icons.check_circle_outline),
-                                        label: const Text('Resolve'),
+                                    if (isOwner) ...[
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton.icon(
+                                              onPressed: () async {
+                                                try {
+                                                  final snap = await _reqRef.get();
+                                                  final req =
+                                                      snap.data() ?? <String, dynamic>{};
+                                                  final current =
+                                                      _getDiseaseConfidenceSummary(req);
+                                                  final edited =
+                                                      await _showEditSummarySheet(
+                                                    context,
+                                                    current,
+                                                  );
+                                                  if (edited == null) return;
+                                                  await _saveEditedSummaryToFirestore(
+                                                    edited,
+                                                  );
+                                                  if (!mounted) return;
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    const SnackBar(
+                                                      content: Text('Results updated'),
+                                                      backgroundColor: Colors.green,
+                                                    ),
+                                                  );
+                                                } catch (e) {
+                                                  if (!mounted) return;
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(
+                                                      content: Text(
+                                                        'Failed to update results: $e',
+                                                      ),
+                                                      backgroundColor: Colors.red,
+                                                    ),
+                                                  );
+                                                }
+                                              },
+                                              icon: const Icon(Icons.edit, size: 18),
+                                              label: const Text('Edit Results'),
+                                            ),
+                                          ),
+                                          if (status != 'closed') ...[
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: ElevatedButton.icon(
+                                                onPressed: () => _showResolveDialog(
+                                                  createdByUid: createdByUid,
+                                                  createdByName: createdByName,
+                                                ),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.green,
+                                                  foregroundColor: Colors.white,
+                                                ),
+                                                icon: const Icon(
+                                                  Icons.check_circle_outline,
+                                                  size: 18,
+                                                ),
+                                                label: const Text('Resolve'),
+                                              ),
+                                            ),
+                                          ],
+                                        ],
                                       ),
+                                    ],
                                   ],
                                 ),
 

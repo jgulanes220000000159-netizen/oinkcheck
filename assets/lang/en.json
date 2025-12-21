@@ -107,7 +107,7 @@
   "reviewed_by": "Reviewed by: {name}",
   "comment": "Comment:",
   "no_treatment_specified": "No treatment specified",
-  "no_treatment_details_note": "The expert has provided their analysis in the comment above. No additional treatment details were specified for this case.",
+  "no_treatment_details_note": "This report has been reviewed. No additional treatment details were provided for this case.",
   "results": "Results:",
   "close": "Close",
   "not_logged_in": "Not logged in",

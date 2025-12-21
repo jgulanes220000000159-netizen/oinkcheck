@@ -39,7 +39,8 @@ class TrackingModels {
       case 'pending':
         return tr('pending');
       case 'pending_review':
-        return tr('pending_review');
+        // Farmer-side UX: still show as Pending even if experts are discussing.
+        return tr('pending');
       default:
         return tr('tracking');
     }
@@ -56,7 +57,7 @@ class TrackingModels {
       case 'pending':
         return Colors.orangeAccent;
       case 'pending_review':
-        return Colors.yellow;
+        return Colors.orangeAccent;
       default:
         return Colors.blue;
     }

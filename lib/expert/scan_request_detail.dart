@@ -26,6 +26,9 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
   bool _showBoundingBoxes = true;
   Timer? _heartbeatTimer;
 
+  // Expert-edited report result summary (does NOT change boxes).
+  List<Map<String, dynamic>>? _editedDiseaseSummary;
+
   // Disease information loaded from Firestore (kept for potential future use)
   // Map<String, Map<String, dynamic>> _diseaseInfo = {}; // removed (not used)
 
@@ -35,8 +38,356 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
     _loadBoundingBoxPreference();
     _claimReportForReview();
     _loadDiseaseInfo();
+    _initEditedSummaryFromRequest();
   }
 
+  void _initEditedSummaryFromRequest() {
+    final existing = widget.request['expertDiseaseSummary'];
+    if (existing is List && existing.isNotEmpty) {
+      _editedDiseaseSummary =
+          existing.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    } else {
+      _editedDiseaseSummary = null;
+    }
+  }
+
+  List<Map<String, dynamic>> _normalizeAndMergeSummary(List<Map<String, dynamic>> input) {
+    final Map<String, Map<String, dynamic>> agg = {};
+    for (final row in input) {
+      final labelRaw =
+          (row['label'] ?? row['disease'] ?? row['name'] ?? 'unknown').toString();
+      final label = PigDiseaseUI.normalizeKey(labelRaw);
+      if (label.isEmpty) continue;
+      final avg = (row['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+      final mx = (row['maxConfidence'] as num?)?.toDouble() ?? avg;
+      final cnt = (row['count'] as num?)?.toInt() ?? 1;
+
+      if (!agg.containsKey(label)) {
+        agg[label] = {
+          'label': label,
+          'name': PigDiseaseUI.displayName(label),
+          'avgConfidence': avg,
+          'maxConfidence': mx,
+          'count': cnt,
+        };
+      } else {
+        final cur = agg[label]!;
+        final curCnt = (cur['count'] as num?)?.toInt() ?? 1;
+        final totalCnt = curCnt + cnt;
+        final curAvg = (cur['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+        final newAvg =
+            totalCnt == 0 ? 0.0 : ((curAvg * curCnt) + (avg * cnt)) / totalCnt;
+        final curMax = (cur['maxConfidence'] as num?)?.toDouble() ?? curAvg;
+        cur['avgConfidence'] = newAvg;
+        cur['maxConfidence'] = math.max(curMax, mx);
+        cur['count'] = totalCnt;
+      }
+    }
+
+    final out = agg.values.toList();
+    out.sort((a, b) {
+      final aAvg = (a['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+      final bAvg = (b['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+      return bAvg.compareTo(aAvg);
+    });
+    return out;
+  }
+
+  String _getCurrentExpertName() {
+    try {
+      final userBox = Hive.box('userBox');
+      final userProfile = userBox.get('userProfile');
+      return (userProfile?['fullName'] ?? 'Expert').toString();
+    } catch (_) {
+      return 'Expert';
+    }
+  }
+
+  bool _isOwnerExpert() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    final review = widget.request['expertReview'];
+    final ownerUid = (widget.request['expertUid'] ??
+            (review is Map ? review['expertUid'] : null) ??
+            widget.request['expertDiseaseSummaryByUid'] ??
+            '')
+        .toString();
+    return ownerUid.isNotEmpty && ownerUid == user.uid;
+  }
+
+  Future<void> _saveEditedSummaryToFirestore(List<Map<String, dynamic>> edited) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    final docId = widget.request['id'] ?? widget.request['requestId'];
+    if (docId == null) return;
+
+    final nowIso = DateTime.now().toIso8601String();
+    final expertName = _getCurrentExpertName();
+
+    await FirebaseFirestore.instance.collection('scan_requests').doc(docId).update({
+      'expertDiseaseSummary': _normalizeAndMergeSummary(edited),
+      'expertDiseaseSummaryUpdatedAt': nowIso,
+      'expertDiseaseSummaryByUid': user.uid,
+      'expertDiseaseSummaryByName': expertName,
+    });
+  }
+
+  Future<List<Map<String, dynamic>>?> _showEditSummarySheet(
+    BuildContext context,
+    List<Map<String, dynamic>> current,
+  ) async {
+    final List<Map<String, dynamic>> working =
+        _normalizeAndMergeSummary(_editedDiseaseSummary ?? current)
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+
+    final options = PigDiseaseUI.diseaseColors.keys
+        .where((k) => k != 'unknown')
+        .toList(growable: false);
+
+    return showModalBottomSheet<List<Map<String, dynamic>>>(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setStateSheet) {
+            return SafeArea(
+              top: false,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom,
+                ),
+                child: SizedBox(
+                  height: MediaQuery.of(ctx).size.height * 0.70,
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                        child: Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Edit Report Result',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Add disease',
+                              onPressed: () async {
+                                final used = working
+                                    .map(
+                                      (e) => PigDiseaseUI.normalizeKey(
+                                        (e['label'] ?? e['disease'] ?? e['name'] ?? '')
+                                            .toString(),
+                                      ),
+                                    )
+                                    .where((k) => k.isNotEmpty)
+                                    .toSet();
+                                final available =
+                                    options.where((k) => !used.contains(k)).toList();
+                                if (available.isEmpty) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('All diseases are already listed.'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                String picked = available.first;
+                                final res = await showDialog<String>(
+                                  context: ctx,
+                                  builder: (dctx) {
+                                    return AlertDialog(
+                                      title: const Text('Add disease'),
+                                      content: StatefulBuilder(
+                                        builder: (dctx, setStateInner) {
+                                          return DropdownButtonFormField<String>(
+                                            value: picked,
+                                            isExpanded: true,
+                                            items: available
+                                                .map(
+                                                  (k) => DropdownMenuItem<String>(
+                                                    value: k,
+                                                    child: Text(PigDiseaseUI.displayName(k)),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: (v) => setStateInner(() {
+                                              picked = v ?? picked;
+                                            }),
+                                          );
+                                        },
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () => Navigator.pop(dctx),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        ElevatedButton(
+                                          onPressed: () => Navigator.pop(dctx, picked),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.green,
+                                            foregroundColor: Colors.white,
+                                          ),
+                                          child: const Text('Add'),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                                if (res == null) return;
+                                setStateSheet(() {
+                                  working.add({
+                                    'label': res,
+                                    'name': PigDiseaseUI.displayName(res),
+                                    // Manual additions have no measured confidence; start at 0.
+                                    'avgConfidence': 0.0,
+                                    'maxConfidence': 0.0,
+                                    'count': 1,
+                                  });
+                                });
+                              },
+                              icon: const Icon(Icons.add_circle_outline),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              child: const Text('Cancel'),
+                            ),
+                            ElevatedButton(
+                              onPressed: () {
+                                Navigator.pop(ctx, _normalizeAndMergeSummary(working));
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                foregroundColor: Colors.white,
+                              ),
+                              child: const Text('Apply'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: working.length,
+                          itemBuilder: (ctx, i) {
+                            final row = working[i];
+                            final label = (row['label'] ?? 'unknown').toString();
+                            final key = PigDiseaseUI.normalizeKey(label);
+                            final avg = (row['avgConfidence'] as num?)?.toDouble() ?? 0.0;
+                            final mx = (row['maxConfidence'] as num?)?.toDouble() ?? avg;
+                            final usedOther = working
+                                .asMap()
+                                .entries
+                                .where((e) => e.key != i)
+                                .map(
+                                  (e) => PigDiseaseUI.normalizeKey(
+                                    (e.value['label'] ??
+                                            e.value['disease'] ??
+                                            e.value['name'] ??
+                                            '')
+                                        .toString(),
+                                  ),
+                                )
+                                .where((k) => k.isNotEmpty)
+                                .toSet();
+                            final rowOptions = options
+                                .where((k) => k == key || !usedOther.contains(k))
+                                .toList(growable: false);
+                            return Card(
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: DropdownButtonFormField<String>(
+                                            value: rowOptions.contains(key)
+                                                ? key
+                                                : rowOptions.first,
+                                            isExpanded: true,
+                                            items: rowOptions
+                                                .map(
+                                                  (k) => DropdownMenuItem<String>(
+                                                    value: k,
+                                                    child: Text(
+                                                      PigDiseaseUI.displayName(k),
+                                                    ),
+                                                  ),
+                                                )
+                                                .toList(),
+                                            onChanged: (v) {
+                                              if (v == null) return;
+                                              if (usedOther.contains(v)) {
+                                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text(
+                                                      'That disease is already listed.',
+                                                    ),
+                                                    backgroundColor: Colors.orange,
+                                                  ),
+                                                );
+                                                return;
+                                              }
+                                              setStateSheet(() {
+                                                row['label'] = v;
+                                                row['name'] = PigDiseaseUI.displayName(v);
+                                              });
+                                            },
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        IconButton(
+                                          tooltip: 'Remove disease',
+                                          onPressed: () {
+                                            setStateSheet(() {
+                                              working.removeAt(i);
+                                            });
+                                          },
+                                          icon: const Icon(
+                                            Icons.delete_outline,
+                                            color: Colors.redAccent,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'Avg ${(avg * 100).toStringAsFixed(1)}% • Max ${(mx * 100).toStringAsFixed(1)}%',
+                                      style: TextStyle(
+                                        color: Colors.grey[700],
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
   Future<void> _loadBoundingBoxPreference() async {
     final box = await Hive.openBox('userBox');
     final savedPreference = box.get('expertShowBoundingBoxes');
@@ -236,6 +587,11 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
         'status': isDisagree ? 'pending_review' : 'completed',
         'expertReview': expertReview,
         'reviewedAt': nowIso,
+        if (_editedDiseaseSummary != null)
+          'expertDiseaseSummary': _normalizeAndMergeSummary(_editedDiseaseSummary!),
+        if (_editedDiseaseSummary != null) 'expertDiseaseSummaryUpdatedAt': nowIso,
+        if (_editedDiseaseSummary != null) 'expertDiseaseSummaryByUid': user.uid,
+        if (_editedDiseaseSummary != null) 'expertDiseaseSummaryByName': expertName,
         // Only set "final" expert fields on AGREE
         if (!isDisagree) 'expertName': expertName,
         if (!isDisagree) 'expertUid': user.uid,
@@ -253,7 +609,14 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
         // Create / update expert discussion for this report
         final req = widget.request;
         final userName = (req['userName'] ?? 'Farmer').toString();
-        final summary = (req['diseaseSummary'] as List?) ?? const [];
+        final summary =
+            (_editedDiseaseSummary ??
+                (req['expertDiseaseSummary'] as List?) ??
+                (req['diseaseSummary'] as List?) ??
+                const [])
+                .whereType<Map>()
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
         // Keep title consistent across screens: prefer non-healthy if present.
         final diseaseLabel = PigDiseaseUI.dominantLabelFromSummary(
           summary,
@@ -302,6 +665,8 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
           'status': _selectedDecision == 'disagree' ? 'pending_review' : 'completed',
           'expertReview': expertReview,
           'reviewedAt': DateTime.now().toIso8601String(),
+          if (_editedDiseaseSummary != null)
+            'expertDiseaseSummary': _normalizeAndMergeSummary(_editedDiseaseSummary!),
         });
       }
     } catch (e) {
@@ -654,9 +1019,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                                 painter: DetectionPainter(
                                   results:
                                       detections
-                                          .where(
-                                            (d) => d['boundingBox'] != null,
-                                          )
+                                          .where((d) => d['boundingBox'] != null)
                                           .map(
                                             (d) => DetectionResult(
                                               label: d['disease'],
@@ -702,9 +1065,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                                     painter: DetectionPainter(
                                       results:
                                           detections
-                                              .where(
-                                                (d) => d['boundingBox'] != null,
-                                              )
+                                              .where((d) => d['boundingBox'] != null)
                                               .map(
                                                 (d) => DetectionResult(
                                                   label: d['disease'],
@@ -868,9 +1229,13 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
   }
 
   /// Returns per-disease avg/max confidence for this report.
-  /// Prefers request.diseaseSummary.{avgConfidence,maxConfidence,label}; falls back to image detections.
+  /// Prefers request.expertDiseaseSummary when present, else request.diseaseSummary;
+  /// falls back to image detections.
   List<Map<String, dynamic>> _getDiseaseConfidenceSummary() {
-    final rawSummary = widget.request['diseaseSummary'] as List<dynamic>? ?? const [];
+    final rawSummary =
+        (widget.request['expertDiseaseSummary'] as List<dynamic>?) ??
+        (widget.request['diseaseSummary'] as List<dynamic>?) ??
+        const [];
 
     final fromSummary = <Map<String, dynamic>>[];
     for (final e in rawSummary) {
@@ -915,6 +1280,9 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
 
   Widget _buildDiseaseSummary() {
     final stats = _getDiseaseConfidenceSummary();
+    final status = (widget.request['status'] ?? '').toString();
+    final isCompleted = status == 'reviewed' || status == 'completed';
+    final canEditAfterCompletion = _isOwnerExpert();
     final sortedDiseases = stats.toList()
       ..sort((a, b) {
         final aAvg = (a['avgConfidence'] as num?)?.toDouble() ?? 0.0;
@@ -925,7 +1293,60 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Report Results', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Report Results',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+            ),
+            if (!isCompleted || canEditAfterCompletion)
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final edited = await _showEditSummarySheet(context, stats);
+                  if (edited == null) return;
+                  setState(() {
+                    _editedDiseaseSummary = edited;
+                    widget.request['expertDiseaseSummary'] = edited;
+                  });
+
+                  // If already completed, save immediately (owner expert only).
+                  if (isCompleted) {
+                    try {
+                      await _saveEditedSummaryToFirestore(edited);
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Results updated successfully'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to update results: $e'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.edit, size: 18),
+                label: const Text('Edit'),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(
+          isCompleted
+              ? (canEditAfterCompletion
+                  ? 'Editing results updates what the farmer sees. It does not change AI bounding boxes.'
+                  : 'Only the reviewing expert can edit results for completed reports.')
+              : 'Editing results changes what the farmer will see after you submit. It does not change AI bounding boxes.',
+          style: TextStyle(color: Colors.grey[700], fontSize: 12),
+        ),
         const SizedBox(height: 16),
         // Compact table view (avg confidence only; no counts)
         Card(

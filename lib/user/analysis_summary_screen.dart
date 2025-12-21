@@ -1469,6 +1469,16 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
           return bAvg.compareTo(aAvg);
         });
 
+    // Farmer feedback: if confidence is low, recommendations are hidden.
+    final lowConfidenceDiseases =
+        sortedDiseases.where((e) {
+          final label = e.key.toString();
+          final key = PigDiseaseUI.normalizeKey(label);
+          if (key == 'healthy' || key == 'unknown') return false;
+          final avg = (e.value['avg'] as double?) ?? 0.0;
+          return avg < _recommendationAvgThreshold;
+        }).toList();
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
@@ -1599,6 +1609,42 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                             ? _buildNoDiseasesMessage()
                             : Column(
                               children: [
+                                if (lowConfidenceDiseases.isNotEmpty) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: Colors.orange.withOpacity(0.25),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(
+                                          Icons.info_outline,
+                                          color: Colors.orange,
+                                          size: 20,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Text(
+                                            'Some detections are below ${(_recommendationAvgThreshold * 100).toStringAsFixed(0)}% average confidence. Recommendations are hidden for these results and are intended for expert review/confirmation.',
+                                            style: TextStyle(
+                                              color: Colors.orange[900],
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                                 ...sortedDiseases.map((entry) {
                                   final v = entry.value;
                                   final avg = (v['avg'] as double?) ?? 0.0;
@@ -1802,7 +1848,8 @@ class _ImageCarouselViewerState extends State<_ImageCarouselViewer> {
                                           displayH,
                                         ),
                                         displayedImageOffset: Offset.zero,
-                                        debugMode: false,
+                                        // Keep labels + confidence visible in fullscreen viewer.
+                                        debugMode: true,
                                       ),
                                       size: Size(displayW, displayH),
                                     ),

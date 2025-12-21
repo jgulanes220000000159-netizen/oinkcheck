@@ -922,7 +922,8 @@ class _UserRequestListState extends State<UserRequestList> {
   String _formatStatusLabel(String status) {
     switch (status) {
       case 'pending_review':
-        return tr('pending_review');
+        // Farmer-side UX: still show as Pending even if experts are discussing.
+        return tr('pending');
       case 'completed':
         return tr('completed');
       default:
@@ -952,7 +953,10 @@ class _UserRequestListState extends State<UserRequestList> {
   Map<String, Object> _getDominantDiseaseByAvgConfidence(
     Map<String, dynamic> request,
   ) {
-    final diseaseSummary = (request['diseaseSummary'] as List?) ?? [];
+    final diseaseSummary =
+        (request['expertDiseaseSummary'] as List?) ??
+        (request['diseaseSummary'] as List?) ??
+        [];
     if (diseaseSummary.isNotEmpty) {
       double best = -1;
       String bestLabel = 'unknown';
