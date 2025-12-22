@@ -1833,6 +1833,9 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
               'MMM d, yyyy – h:mma',
             ).format(DateTime.parse(reviewedAt))
             : reviewedAt;
+    final expertName =
+        (widget.request['expertName'] ?? widget.request['reviewedByName'] ?? '')
+            .toString();
 
     final isCompleted =
         widget.request['status']?.toString() == 'reviewed' ||
@@ -1945,6 +1948,39 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                             ),
                           ],
                         ),
+                        if (expertName.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.verified_user,
+                                size: 16,
+                                color: Colors.blueGrey,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Validated by:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  expertName,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black87,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ],
                     ],
                   ),

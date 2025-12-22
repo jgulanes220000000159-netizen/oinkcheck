@@ -634,7 +634,6 @@ class _TreatmentEditScreenState extends State<TreatmentEditScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Photo placeholder (for later upload integration)
             const Text(
               'Disease Photo',
               style: TextStyle(fontWeight: FontWeight.w700),
@@ -648,20 +647,12 @@ class _TreatmentEditScreenState extends State<TreatmentEditScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey.shade300),
               ),
-              child: Column(
-                children: [
-                  Icon(Icons.image_outlined, color: Colors.grey[600]),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Image will be added later',
-                    style: TextStyle(color: Colors.grey[700]),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Static placeholder (not editable yet)',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                  ),
-                ],
+              child: Center(
+                child: DiseaseImage(
+                  diseaseId: widget.diseaseId,
+                  size: 140,
+                  borderRadius: 16,
+                ),
               ),
             ),
             const SizedBox(height: 16),

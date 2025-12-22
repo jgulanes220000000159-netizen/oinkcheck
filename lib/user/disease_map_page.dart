@@ -3,6 +3,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
+import '../shared/pig_disease_ui.dart';
+import '../shared/geocoding_service.dart';
 
 class DiseaseMapPage extends StatefulWidget {
   const DiseaseMapPage({Key? key}) : super(key: key);
@@ -16,16 +18,47 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
   List<Marker> _markers = [];
   String? _selectedDisease;
 
-  // Static list of diseases
-  final List<String> _diseases = [
-    'Swine Pox',
-    'Erysipelas',
-    'Greasy Pig Disease',
-    'Ringworm',
-    'Mange',
-    'Foot and Mouth Disease',
-    'Sunburn',
+  // Use model label keys for filtering/colors (exclude healthy/unknown).
+  final List<String> _diseaseKeys = const [
+    'swine_pox',
+    'infected_bacterial_erysipelas',
+    'infected_bacterial_greasy',
+    'infected_environmental_sunburn',
+    'infected_fungal_ringworm',
+    'infected_parasitic_mange',
+    'infected_viral_foot_and_mouth',
   ];
+
+  String _canonicalDiseaseKey(String raw) {
+    final k = PigDiseaseUI.normalizeKey(raw);
+    switch (k) {
+      case 'erysipelas':
+      case 'bacterial_erysipelas':
+      case 'infected_bacterial_erysipelas':
+        return 'infected_bacterial_erysipelas';
+      case 'greasy_pig_disease':
+      case 'greasy':
+      case 'infected_bacterial_greasy':
+        return 'infected_bacterial_greasy';
+      case 'sunburn':
+      case 'infected_environmental_sunburn':
+        return 'infected_environmental_sunburn';
+      case 'ringworm':
+      case 'infected_fungal_ringworm':
+        return 'infected_fungal_ringworm';
+      case 'mange':
+      case 'infected_parasitic_mange':
+        return 'infected_parasitic_mange';
+      case 'foot_and_mouth':
+      case 'foot-and-mouth_disease':
+      case 'infected_viral_foot_and_mouth':
+        return 'infected_viral_foot_and_mouth';
+      case 'swine_pox':
+        return 'swine_pox';
+      default:
+        return k;
+    }
+  }
 
   bool _isLoading = true;
 
@@ -48,101 +81,205 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     });
 
     try {
-      // Load scan requests with location data
+      // Load ONLY completed reports (validated by expert).
       final snapshot =
           await FirebaseFirestore.instance
               .collection('scan_requests')
-              .where('status', whereIn: ['completed', 'reviewed'])
+              .where('status', isEqualTo: 'completed')
               .get();
 
-      final markers = <Marker>[];
+      print(
+        '🔍 Disease Map: Found ${snapshot.docs.length} documents with status="completed"',
+      );
 
-      for (var doc in snapshot.docs) {
+      // Aggregate by City (focus area).
+      // One marker per city for selected disease, with size based on case count.
+      final Map<String, _BarangayAgg> agg = {};
+      final geocoder = GeocodingService();
+      final Map<String, Map<String, dynamic>?> userCache = {};
+
+      for (final doc in snapshot.docs) {
         final data = doc.data();
 
-        // Get disease summary
-        final diseaseSummary = data['diseaseSummary'] as List<dynamic>?;
-        if (diseaseSummary == null || diseaseSummary.isEmpty) continue;
+        // Only condition: status must be exactly 'completed'.
+        final status = (data['status'] ?? '').toString();
+        if (status != 'completed') continue;
 
-        // Get dominant disease
-        final sortedDiseases = List<Map<String, dynamic>>.from(
-          diseaseSummary.map((d) => d as Map<String, dynamic>),
-        )..sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
+        // Use expertDiseaseSummary when present, otherwise fall back to model diseaseSummary.
+        final rawSummary =
+            (data['expertDiseaseSummary'] as List?) ??
+            (data['diseaseSummary'] as List?) ??
+            const [];
 
-        final dominantDisease = sortedDiseases.first['name'] as String;
-        final count = sortedDiseases.first['count'] as int;
+        final List<Map<String, dynamic>> cleaned = [];
+        for (final e in rawSummary) {
+          if (e is Map) cleaned.add(Map<String, dynamic>.from(e));
+        }
+        if (cleaned.isEmpty) continue;
 
-        // Filter by selected disease if set
-        if (_selectedDisease != null && dominantDisease != _selectedDisease) {
+        // Collect all disease labels present in this report (no dominant logic).
+        final Set<String> diseaseKeysInReport =
+            cleaned
+                .map((e) => _canonicalDiseaseKey(e['label']?.toString() ?? ''))
+                .where((k) => k.isNotEmpty)
+                .toSet();
+        // If a specific disease is selected, skip reports that don't contain it.
+        if (_selectedDisease != null &&
+            !diseaseKeysInReport.contains(_selectedDisease)) {
           continue;
         }
 
-        // Try to get location from user data
-        final userId = data['userId'] as String?;
-        if (userId == null) continue;
+        final userId = (data['userId'] ?? '').toString();
+        if (userId.trim().isEmpty) continue;
 
-        final userDoc =
-            await FirebaseFirestore.instance
-                .collection('users')
-                .doc(userId)
-                .get();
+        // Prefer address fields copied onto scan_requests; fall back to user profile.
+        String province = (data['province'] ?? '').toString();
+        String city = (data['cityMunicipality'] ?? '').toString();
+        String barangay = (data['barangay'] ?? '').toString();
 
-        if (!userDoc.exists) continue;
+        double? lat = (data['latitude'] as num?)?.toDouble();
+        double? lng = (data['longitude'] as num?)?.toDouble();
 
-        final userData = userDoc.data() as Map<String, dynamic>;
+        if (province.trim().isEmpty ||
+            city.trim().isEmpty ||
+            barangay.trim().isEmpty ||
+            lat == null ||
+            lng == null) {
+          // Fetch user doc once per userId (cached) for older reports.
+          Map<String, dynamic>? u = userCache[userId];
+          if (u == null && !userCache.containsKey(userId)) {
+            try {
+              final userDoc =
+                  await FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(userId)
+                      .get();
+              u = userDoc.data();
+            } catch (_) {
+              u = null;
+            }
+            userCache[userId] = u;
+          } else {
+            u = userCache[userId];
+          }
 
-        // Get location coordinates (latitude/longitude)
-        // You'll need to add these fields to user profiles or scan_requests
-        final lat = userData['latitude'] as double?;
-        final lng = userData['longitude'] as double?;
-
-        if (lat == null || lng == null) continue;
-
-        // Determine severity color based on count
-        Color markerColor;
-        if (count >= 5) {
-          markerColor = Colors.red; // Severe
-        } else if (count >= 3) {
-          markerColor = Colors.orange; // Moderate
-        } else {
-          markerColor = Colors.green; // Mild
+          if (u != null) {
+            province =
+                province.trim().isEmpty
+                    ? (u['province'] ?? '').toString()
+                    : province;
+            city =
+                city.trim().isEmpty
+                    ? (u['cityMunicipality'] ?? '').toString()
+                    : city;
+            barangay =
+                barangay.trim().isEmpty
+                    ? (u['barangay'] ?? '').toString()
+                    : barangay;
+            lat ??= (u['latitude'] as num?)?.toDouble();
+            lng ??= (u['longitude'] as num?)?.toDouble();
+          }
         }
 
+        if (barangay.trim().isEmpty && city.trim().isEmpty) continue;
+
+        // Group by CITY + PROVINCE (not barangay) so each city has one pin.
+        final key = '${city.toLowerCase()}|${province.toLowerCase()}';
+        agg.putIfAbsent(
+          key,
+          () => _BarangayAgg(
+            // For display we just pick one disease present in this barangay;
+            // filtering is handled above using the full set.
+            diseaseKey:
+                diseaseKeysInReport.isNotEmpty
+                    ? diseaseKeysInReport.first
+                    : 'swine_pox',
+            province: province,
+            city: city,
+            // Keep first barangay seen for this city for informational text.
+            barangay: barangay,
+          ),
+        );
+        agg[key]!.count++;
+      }
+
+      // Geocode CITY centroid (best-effort, cached) so pins sit at city center,
+      // independent of individual farmer lat/lng.
+      for (final a in agg.values) {
+        if (a.province.trim().isEmpty || a.city.trim().isEmpty) continue;
+        final geo = await geocoder.geocodeCity(
+          cityMunicipality: a.city,
+          province: a.province,
+        );
+        if (geo != null) {
+          a.lat = geo['lat'];
+          a.lng = geo['lng'];
+        }
+      }
+
+      final markers = <Marker>[];
+      for (final a in agg.values) {
+        if (a.lat == null || a.lng == null) continue;
+        final count = a.count;
+        final severityColor = _severityColor(count);
+
+        // Simple visual rule: Pin color = severity (mild/moderate/severe)
+        // Pin size = case volume (count)
+        final double pinSize = (32 + (count * 4)).clamp(32, 56).toDouble();
         markers.add(
           Marker(
-            point: LatLng(lat, lng),
-            width: 40,
-            height: 40,
+            point: LatLng(a.lat!, a.lng!),
+            width: pinSize,
+            height: pinSize,
             child: GestureDetector(
               onTap: () {
-                _showMarkerInfo(dominantDisease, count);
+                _showMarkerInfo(
+                  a.diseaseKey,
+                  count,
+                  barangay: a.barangay,
+                  city: a.city,
+                  province: a.province,
+                );
               },
-              child: Icon(Icons.location_pin, color: markerColor, size: 40),
+              child: Icon(
+                Icons.location_pin,
+                color: severityColor,
+                size: pinSize,
+              ),
             ),
           ),
         );
       }
 
+      print(
+        '✅ Disease Map: Created ${markers.length} markers from validated reports',
+      );
       setState(() {
         _markers = markers;
         _isLoading = false;
       });
     } catch (e) {
-      print('Error loading disease locations: $e');
+      print('❌ Error loading disease locations: $e');
       setState(() {
         _isLoading = false;
       });
     }
   }
 
-  void _showMarkerInfo(String disease, int count) {
+  void _showMarkerInfo(
+    String diseaseKey,
+    int count, {
+    required String barangay,
+    required String city,
+    required String province,
+  }) {
     showDialog(
       context: context,
       builder:
           (context) => AlertDialog(
-            title: Text(disease),
+            title: Text(PigDiseaseUI.displayName(diseaseKey)),
             content: Text(
-              'Cases: $count\nSeverity: ${_getSeverityLabel(count)}',
+              'Location: $barangay, $city, $province\nCases: $count\nSeverity: ${_getSeverityLabel(count)}',
               style: const TextStyle(fontSize: 16),
             ),
             actions: [
@@ -161,6 +298,12 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     return 'Mild';
   }
 
+  Color _severityColor(int count) {
+    if (count >= 5) return Colors.red;
+    if (count >= 3) return Colors.orange;
+    return Colors.green;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -176,13 +319,41 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Legend
+                        // Legend (non-confusing):
+                        // Pin color = severity (mild/moderate/severe)
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            _buildLegendItem(Colors.green, 'Mild'),
-                            _buildLegendItem(Colors.orange, 'Moderate'),
-                            _buildLegendItem(Colors.red, 'Severe'),
+                            Expanded(
+                              child: Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  _buildLegendItem(Colors.green, 'Mild'),
+                                  _buildLegendItem(Colors.orange, 'Moderate'),
+                                  _buildLegendItem(Colors.red, 'Severe'),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Pin color = Severity • Pin size = Number of completed reports',
+                                style: TextStyle(
+                                  color: Colors.grey[700],
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.refresh, size: 20),
+                              tooltip: 'Refresh map data',
+                              onPressed:
+                                  _isLoading ? null : _loadDiseaseLocations,
+                            ),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -216,10 +387,10 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                               value: null,
                               child: Text('All Diseases'),
                             ),
-                            ..._diseases.map((disease) {
+                            ..._diseaseKeys.map((key) {
                               return DropdownMenuItem<String>(
-                                value: disease,
-                                child: Text(disease),
+                                value: key,
+                                child: Text(PigDiseaseUI.displayName(key)),
                               );
                             }).toList(),
                           ],
@@ -287,4 +458,21 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
       ],
     );
   }
+}
+
+class _BarangayAgg {
+  _BarangayAgg({
+    required this.diseaseKey,
+    required this.province,
+    required this.city,
+    required this.barangay,
+  });
+
+  final String diseaseKey;
+  final String province;
+  final String city;
+  final String barangay;
+  int count = 0;
+  double? lat;
+  double? lng;
 }

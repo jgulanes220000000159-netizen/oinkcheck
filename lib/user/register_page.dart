@@ -6,6 +6,7 @@ import 'login_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
+import '../shared/geocoding_service.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({Key? key}) : super(key: key);
@@ -333,6 +334,27 @@ class _RegisterPageState extends State<RegisterPage> {
           'imageProfile': '',
           'createdAt': DateTime.now(),
         });
+
+        // Best-effort geocode for Disease Map (Barangay centroid).
+        // Non-fatal if it fails.
+        try {
+          final geo = await GeocodingService().geocode(
+            barangay: _selectedBarangayName ?? '',
+            cityMunicipality: _selectedCityName ?? '',
+            province: _selectedProvinceName ?? '',
+          );
+          if (geo != null) {
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(user.uid)
+                .set({
+                  'latitude': geo['lat'],
+                  'longitude': geo['lng'],
+                  'geoSource': 'nominatim_barangay_centroid',
+                  'geoUpdatedAt': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+          }
+        } catch (_) {}
       }
       setState(() {
         _isLoading = false;

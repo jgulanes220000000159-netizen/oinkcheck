@@ -14,6 +14,7 @@ import 'tflite_detector.dart';
 import 'detection_painter.dart';
 import '../shared/pig_disease_ui.dart';
 import '../shared/treatments_repository.dart';
+import '../shared/geocoding_service.dart';
 // import 'detection_carousel_screen.dart';
 // import 'detection_result_card.dart';
 // import 'tracking_page.dart';
@@ -359,6 +360,58 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
       final userBox = await Hive.openBox('userBox');
       final userProfile = userBox.get('userProfile');
       final fullName = userProfile?['fullName'] ?? 'Unknown';
+
+      // Fetch user address + cached centroid (best-effort) so map can group by barangay.
+      String? province;
+      String? cityMunicipality;
+      String? barangay;
+      double? lat;
+      double? lng;
+      try {
+        final userDoc =
+            await FirebaseFirestore.instance
+                .collection('users')
+                .doc(userId)
+                .get();
+        final ud = userDoc.data();
+        if (ud != null) {
+          province = (ud['province'] ?? '').toString();
+          cityMunicipality = (ud['cityMunicipality'] ?? '').toString();
+          barangay = (ud['barangay'] ?? '').toString();
+          lat = (ud['latitude'] as num?)?.toDouble();
+          lng = (ud['longitude'] as num?)?.toDouble();
+        }
+      } catch (_) {}
+
+      // If no saved centroid yet, geocode once and also store on user doc.
+      if ((lat == null || lng == null) &&
+          (barangay ?? '').trim().isNotEmpty &&
+          (cityMunicipality ?? '').trim().isNotEmpty &&
+          (province ?? '').trim().isNotEmpty) {
+        try {
+          final geo = await GeocodingService().geocode(
+            barangay: barangay!,
+            cityMunicipality: cityMunicipality!,
+            province: province!,
+          );
+          if (geo != null) {
+            lat = geo['lat'];
+            lng = geo['lng'];
+            try {
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(userId)
+                  .set({
+                    'latitude': lat,
+                    'longitude': lng,
+                    'geoSource': 'nominatim_barangay_centroid',
+                    'geoUpdatedAt': FieldValue.serverTimestamp(),
+                  }, SetOptions(merge: true));
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+
       await FirebaseFirestore.instance
           .collection('scan_requests')
           .doc(sessionId)
@@ -368,6 +421,11 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
             'userName': fullName,
             'status': 'pending',
             'submittedAt': now,
+            'province': province,
+            'cityMunicipality': cityMunicipality,
+            'barangay': barangay,
+            'latitude': lat,
+            'longitude': lng,
             'images': images, // This now includes both imageUrl and imagePath
             'diseaseSummary':
                 diseaseSummary

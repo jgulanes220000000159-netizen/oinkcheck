@@ -6,6 +6,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:mime/mime.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../shared/geocoding_service.dart';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({Key? key}) : super(key: key);
@@ -27,9 +30,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
   bool _hasValidated = false;
   Map<String, String?> _fieldErrors = {};
 
+  // Location state (same model as registration)
+  List<Map<String, String>> _provinces = [];
+  List<Map<String, String>> _cities = [];
+  List<Map<String, String>> _barangays = [];
+  String? _selectedProvinceCode;
+  String? _selectedCityCode;
+  String? _selectedProvinceName;
+  String? _selectedCityName;
+  String? _selectedBarangayName;
+
   @override
   void initState() {
     super.initState();
+    _loadProvinces();
     _loadUserData();
   }
 
@@ -46,12 +60,33 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
         if (userDoc.exists) {
           final data = userDoc.data() as Map<String, dynamic>;
+
+          // Prefer structured address fields if present
+          final street = (data['street'] ?? '').toString();
+          final combinedAddress = (data['address'] ?? '').toString();
+
           setState(() {
-            _fullNameController.text = data['fullName'] ?? '';
-            _addressController.text = data['address'] ?? '';
-            _phoneController.text = data['phoneNumber'] ?? '';
-            _emailController.text = data['email'] ?? '';
-            _profileImageUrl = data['imageProfile'];
+            _fullNameController.text = (data['fullName'] ?? '').toString();
+            _addressController.text =
+                street.isNotEmpty ? street : combinedAddress;
+            _phoneController.text = (data['phoneNumber'] ?? '').toString();
+            _emailController.text = (data['email'] ?? '').toString();
+            _profileImageUrl = data['imageProfile']?.toString();
+
+            // Existing structured location (if any)
+            _selectedProvinceName =
+                (data['province'] ?? '').toString().isNotEmpty
+                    ? (data['province'] ?? '').toString()
+                    : null;
+            _selectedCityName =
+                (data['cityMunicipality'] ?? '').toString().isNotEmpty
+                    ? (data['cityMunicipality'] ?? '').toString()
+                    : null;
+            _selectedBarangayName =
+                (data['barangay'] ?? '').toString().isNotEmpty
+                    ? (data['barangay'] ?? '').toString()
+                    : null;
+
             _isLoadingData = false;
           });
         }
@@ -62,6 +97,118 @@ class _EditProfilePageState extends State<EditProfilePage> {
         _isLoadingData = false;
       });
     }
+  }
+
+  // --- Location loading using PSGC API (Philippines) ---
+  Future<void> _loadProvinces() async {
+    try {
+      final response =
+          await http.get(Uri.parse('https://psgc.gitlab.io/api/provinces/'));
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        setState(() {
+          _provinces = data
+              .map<Map<String, String>>(
+                (p) => {
+                  'code': p['code']?.toString() ?? '',
+                  'name': p['name']?.toString() ?? '',
+                },
+              )
+              .where((p) => p['code']!.isNotEmpty && p['name']!.isNotEmpty)
+              .toList()
+            ..sort((a, b) => a['name']!.compareTo(b['name']!));
+
+          // If we already know the province name from Firestore, map it to a code
+          if (_selectedProvinceName != null) {
+            final match = _provinces.firstWhere(
+              (p) => p['name'] == _selectedProvinceName,
+              orElse: () => {},
+            );
+            if (match.isNotEmpty) {
+              _selectedProvinceCode = match['code'];
+              _loadCitiesForProvince(_selectedProvinceCode!);
+            }
+          }
+        });
+      }
+    } catch (_) {
+      // Fail silently – user can still type street and keep old province/city/barangay
+    }
+  }
+
+  Future<void> _loadCitiesForProvince(String provinceCode) async {
+    setState(() {
+      _cities = [];
+      _barangays = [];
+      _selectedCityCode = null;
+      // keep _selectedCityName / _selectedBarangayName; we'll remap after load
+    });
+    try {
+      final response = await http.get(
+        Uri.parse('https://psgc.gitlab.io/api/cities-municipalities/'),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final filtered = data.where((c) {
+          final pCode = (c['provinceCode'] ?? c['province_code'])?.toString();
+          return pCode == provinceCode;
+        }).toList();
+        setState(() {
+          _cities = filtered
+              .map<Map<String, String>>(
+                (c) => {
+                  'code': c['code']?.toString() ?? '',
+                  'name': c['name']?.toString() ?? '',
+                },
+              )
+              .where((c) => c['code']!.isNotEmpty && c['name']!.isNotEmpty)
+              .toList()
+            ..sort((a, b) => a['name']!.compareTo(b['name']!));
+
+          if (_selectedCityName != null) {
+            final match = _cities.firstWhere(
+              (c) => c['name'] == _selectedCityName,
+              orElse: () => {},
+            );
+            if (match.isNotEmpty) {
+              _selectedCityCode = match['code'];
+              _loadBarangaysForCity(_selectedCityCode!);
+            }
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _loadBarangaysForCity(String cityCode) async {
+    setState(() {
+      _barangays = [];
+      // keep _selectedBarangayName; we'll remap after load
+    });
+    try {
+      final response = await http.get(
+        Uri.parse('https://psgc.gitlab.io/api/barangays/'),
+      );
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        final filtered = data.where((b) {
+          final cCode = (b['cityCode'] ?? b['city_code'])?.toString();
+          return cCode == cityCode;
+        }).toList();
+        setState(() {
+          _barangays = filtered
+              .map<Map<String, String>>(
+                (b) => {
+                  'code': b['code']?.toString() ?? '',
+                  'name': b['name']?.toString() ?? '',
+                },
+              )
+              .where((b) => b['code']!.isNotEmpty && b['name']!.isNotEmpty)
+              .toList()
+            ..sort((a, b) => a['name']!.compareTo(b['name']!));
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _pickProfileImage() async {
@@ -152,6 +299,16 @@ class _EditProfilePageState extends State<EditProfilePage> {
         'address': _validateAddress(_addressController.text),
         'phone': _validatePhone(_phoneController.text),
         'email': _validateEmail(_emailController.text),
+        // Location validation – must match registration rules
+        'province': _selectedProvinceName == null
+            ? 'Please select your province'
+            : null,
+        'city': _selectedCityName == null
+            ? 'Please select your city/municipality'
+            : null,
+        'barangay': _selectedBarangayName == null
+            ? 'Please select your barangay'
+            : null,
       };
     });
 
@@ -174,17 +331,51 @@ class _EditProfilePageState extends State<EditProfilePage> {
           newImageUrl = await _uploadProfileImage(_profileImage!.path);
         }
 
-        // Update user profile in Firestore
-        await FirebaseFirestore.instance
-            .collection('users')
-            .doc(user.uid)
-            .update({
-              'fullName': _fullNameController.text.trim(),
-              'address': _addressController.text.trim(),
-              'phoneNumber': _phoneController.text.trim(),
-              'email': _emailController.text.trim(),
-              if (newImageUrl != null) 'imageProfile': newImageUrl,
-            });
+        final street = _addressController.text.trim();
+        final province = _selectedProvinceName ?? '';
+        final city = _selectedCityName ?? '';
+        final barangay = _selectedBarangayName ?? '';
+
+        final combinedAddress =
+            '$street, $barangay, $city, $province'.replaceAll(RegExp(r',\\s*,'),
+                ',').trim();
+
+        final userRef =
+            FirebaseFirestore.instance.collection('users').doc(user.uid);
+
+        // Update user profile in Firestore (structured address same as registration)
+        await userRef.update({
+          'fullName': _fullNameController.text.trim(),
+          'street': street,
+          'province': province,
+          'cityMunicipality': city,
+          'barangay': barangay,
+          'address': combinedAddress,
+          'phoneNumber': _phoneController.text.trim(),
+          'email': _emailController.text.trim(),
+          if (newImageUrl != null) 'imageProfile': newImageUrl,
+        });
+
+        // Best-effort geocode for Disease Map (Barangay centroid).
+        // Must never block/save failure even if lookup fails.
+        try {
+          final geo = await GeocodingService().geocode(
+            barangay: barangay,
+            cityMunicipality: city,
+            province: province,
+          );
+          if (geo != null) {
+            await userRef.set({
+              'latitude': geo['lat'],
+              'longitude': geo['lng'],
+              'geoSource': 'nominatim_barangay_centroid',
+              'geoUpdatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+          }
+        } catch (e) {
+          // Ignore geocode errors to allow profile save to succeed
+          debugPrint('Geocode skipped on profile save: $e');
+        }
 
         setState(() {
           _isLoading = false;
@@ -319,6 +510,227 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   ),
                 ],
               ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildLocationDropdowns() {
+    final bool showProvinceError =
+        _hasValidated && (_fieldErrors['province'] ?? '').isNotEmpty;
+    final bool showCityError =
+        _hasValidated && (_fieldErrors['city'] ?? '').isNotEmpty;
+    final bool showBarangayError =
+        _hasValidated && (_fieldErrors['barangay'] ?? '').isNotEmpty;
+
+    TextStyle labelStyle = const TextStyle(
+      color: Colors.white70,
+      fontSize: 13,
+      fontWeight: FontWeight.w500,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Province', style: labelStyle),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          value: _selectedProvinceName,
+          dropdownColor: Colors.white,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: showProvinceError
+                ? Colors.redAccent.withOpacity(0.08)
+                : Colors.white,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: showProvinceError ? Colors.redAccent : Colors.grey[400]!,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: showProvinceError ? Colors.redAccent : Colors.green,
+                width: 1.2,
+              ),
+            ),
+          ),
+          iconEnabledColor: Colors.grey,
+          style: const TextStyle(color: Colors.black87),
+          hint: const Text(
+            'Select Province',
+            style: TextStyle(color: Colors.grey),
+          ),
+          items: _provinces
+              .map(
+                (p) => DropdownMenuItem<String>(
+                  value: p['name'],
+                  child: Text(
+                    p['name'] ?? '',
+                    style: const TextStyle(color: Colors.black87),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedProvinceName = value;
+              _selectedCityName = null;
+              _selectedBarangayName = null;
+              if (_hasValidated) {
+                _fieldErrors['province'] =
+                    value == null ? 'Please select your province' : null;
+              }
+            });
+            final match =
+                _provinces.firstWhere((p) => p['name'] == value, orElse: () => {});
+            if (match.isNotEmpty && match['code'] != null) {
+              _selectedProvinceCode = match['code'];
+              _loadCitiesForProvince(_selectedProvinceCode!);
+            }
+          },
+        ),
+        if (showProvinceError)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 6, right: 12),
+            child: Text(
+              _fieldErrors['province']!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+            ),
+          ),
+        const SizedBox(height: 14),
+        Text('City / Municipality', style: labelStyle),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          value: _selectedCityName,
+          dropdownColor: Colors.white,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: showCityError
+                ? Colors.redAccent.withOpacity(0.08)
+                : Colors.white,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: showCityError ? Colors.redAccent : Colors.grey[400]!,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: showCityError ? Colors.redAccent : Colors.green,
+                width: 1.2,
+              ),
+            ),
+          ),
+          iconEnabledColor: Colors.grey,
+          style: const TextStyle(color: Colors.black87),
+          hint: const Text(
+            'Select City / Municipality',
+            style: TextStyle(color: Colors.grey),
+          ),
+          items: _cities
+              .map(
+                (c) => DropdownMenuItem<String>(
+                  value: c['name'],
+                  child: Text(
+                    c['name'] ?? '',
+                    style: const TextStyle(color: Colors.black87),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedCityName = value;
+              _selectedBarangayName = null;
+              if (_hasValidated) {
+                _fieldErrors['city'] =
+                    value == null ? 'Please select your city/municipality' : null;
+              }
+            });
+            final match =
+                _cities.firstWhere((c) => c['name'] == value, orElse: () => {});
+            if (match.isNotEmpty && match['code'] != null) {
+              _selectedCityCode = match['code'];
+              _loadBarangaysForCity(_selectedCityCode!);
+            }
+          },
+        ),
+        if (showCityError)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 6, right: 12),
+            child: Text(
+              _fieldErrors['city']!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+            ),
+          ),
+        const SizedBox(height: 14),
+        Text('Barangay', style: labelStyle),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          value: _selectedBarangayName,
+          dropdownColor: Colors.white,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: showBarangayError
+                ? Colors.redAccent.withOpacity(0.08)
+                : Colors.white,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: showBarangayError ? Colors.redAccent : Colors.grey[400]!,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: showBarangayError ? Colors.redAccent : Colors.green,
+                width: 1.2,
+              ),
+            ),
+          ),
+          iconEnabledColor: Colors.grey,
+          style: const TextStyle(color: Colors.black87),
+          hint: const Text(
+            'Select Barangay',
+            style: TextStyle(color: Colors.grey),
+          ),
+          items: _barangays
+              .map(
+                (b) => DropdownMenuItem<String>(
+                  value: b['name'],
+                  child: Text(
+                    b['name'] ?? '',
+                    style: const TextStyle(color: Colors.black87),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedBarangayName = value;
+              if (_hasValidated) {
+                _fieldErrors['barangay'] =
+                    value == null ? 'Please select your barangay' : null;
+              }
+            });
+          },
+        ),
+        if (showBarangayError)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, top: 6, right: 12),
+            child: Text(
+              _fieldErrors['barangay']!,
+              style: const TextStyle(color: Colors.redAccent, fontSize: 12),
             ),
           ),
       ],
@@ -461,8 +873,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
                             keyboardType: TextInputType.name,
                           ),
                           const SizedBox(height: 16),
+                          _buildLocationDropdowns(),
+                          const SizedBox(height: 16),
                           _buildTextField(
-                            label: 'Address',
+                            label: 'Street / Purok / House No.',
                             controller: _addressController,
                             fieldKey: 'address',
                             prefixIcon: Icons.home,

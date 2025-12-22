@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 // import '../routes.dart';
 import '../user/login_page.dart';
+import '../user/edit_profile_page.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -1624,7 +1625,19 @@ class _ExpertProfileState extends State<ExpertProfile> {
                           _buildProfileOption(
                             title: 'Edit Profile',
                             icon: Icons.edit,
-                            onTap: () => _showEditProfileDialog(context),
+                            onTap: () async {
+                              await Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const EditProfilePage(),
+                                ),
+                              );
+                              // Refresh after editing
+                              if (mounted) {
+                                setState(() => _isLoading = true);
+                                await _loadUserData();
+                              }
+                            },
                           ),
                           _buildProfileOption(
                             title: 'Change Password',

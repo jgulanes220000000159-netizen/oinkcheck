@@ -36,6 +36,8 @@ class _ScanRequestListState extends State<ScanRequestList>
   String _searchQuery = '';
   List<Map<String, dynamic>> _pendingRequests = [];
   List<Map<String, dynamic>> _completedRequests = [];
+  // Filter for completed/validated tab: 'all' | 'mine'
+  String _completedOwnerFilter = 'all';
   String _pendingDiseaseFilter = 'all'; // all | contagious | non_contagious
   // Track which pending requests have been opened (to hide "New" badge)
   Set<String> _seenPendingIds = <String>{};
@@ -82,12 +84,6 @@ class _ScanRequestListState extends State<ScanRequestList>
 
   Future<void> _fetchRequests() async {
     // Get current expert's UID from Firebase Auth
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      return;
-    }
-    final currentExpertUid = user.uid;
-
     final pendingQuery =
         await FirebaseFirestore.instance
             .collection('scan_requests')
@@ -103,12 +99,8 @@ class _ScanRequestListState extends State<ScanRequestList>
 
     setState(() {
       _pendingRequests = pendingQuery.docs.map((doc) => doc.data()).toList();
-      // Filter completed requests to only show those reviewed by current expert
-      _completedRequests =
-          completedQuery.docs.map((doc) => doc.data()).where((request) {
-            final expertUid = request['expertUid'] ?? '';
-            return expertUid == currentExpertUid;
-          }).toList();
+      // For completed: keep ALL validated reports.
+      _completedRequests = completedQuery.docs.map((doc) => doc.data()).toList();
     });
   }
 
@@ -163,6 +155,21 @@ class _ScanRequestListState extends State<ScanRequestList>
           reviewedAt.contains(query) ||
           status.contains(query) ||
           id.contains(query);
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _applyCompletedOwnerFilter(
+    List<Map<String, dynamic>> requests,
+  ) {
+    if (_completedOwnerFilter == 'all') return requests;
+
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final uid = currentUser?.uid ?? '';
+    if (uid.isEmpty) return requests;
+
+    return requests.where((r) {
+      final expertUid = (r['expertUid'] ?? '').toString();
+      return expertUid == uid;
     }).toList();
   }
 
@@ -300,11 +307,56 @@ class _ScanRequestListState extends State<ScanRequestList>
     );
   }
 
+  Widget _buildCompletedOwnerFilterBar() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Row(
+        children: [
+          const Text(
+            'Showing:',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: DropdownButtonFormField<String>(
+              value: _completedOwnerFilter,
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: Colors.grey[50],
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              items: const [
+                DropdownMenuItem(
+                  value: 'all',
+                  child: Text('All validated reports'),
+                ),
+                DropdownMenuItem(
+                  value: 'mine',
+                  child: Text('Only reports I validated'),
+                ),
+              ],
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() => _completedOwnerFilter = v);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildRequestCard(Map<String, dynamic> request) {
     final dominantDiseaseKey = _dominantDiseaseLabel(request);
     final isCompleted =
         request['status'] == 'reviewed' || request['status'] == 'completed';
     final userName = request['userName']?.toString() ?? '(No Name)';
+    final expertName =
+        (request['expertName'] ?? request['reviewedByName'] ?? '').toString();
     final submittedAt = request['submittedAt'] ?? '';
     // Format date
     final formattedDate =
@@ -526,6 +578,31 @@ class _ScanRequestListState extends State<ScanRequestList>
                           ),
                         ],
                       ),
+                      if (expertName.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.verified_user,
+                              size: 14,
+                              color: Colors.blueGrey,
+                            ),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Validated by: $expertName',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ],
                 ),
@@ -1127,10 +1204,6 @@ class _ScanRequestListState extends State<ScanRequestList>
 
   @override
   Widget build(BuildContext context) {
-    // Get current expert's UID from Firebase Auth
-    final user = FirebaseAuth.instance.currentUser;
-    final currentExpertUid = user?.uid ?? '';
-
     return StreamBuilder<QuerySnapshot>(
       stream:
           FirebaseFirestore.instance.collection('scan_requests').snapshots(),
@@ -1161,23 +1234,17 @@ class _ScanRequestListState extends State<ScanRequestList>
         });
         final filteredPending = _applyPendingDiseaseFilter(
           _filterRequests(
-          allRequests
-              .where(
-                (r) =>
-                    r['status'] == 'pending',
-              )
-              .toList(),
-        ),
+            allRequests
+                .where((r) => r['status'] == 'pending')
+                .toList(),
+          ),
         );
-        // Filter completed requests to only show those reviewed by current expert
+        // Completed: start from ALL completed requests, we'll add an owner filter separately
+        final completedBase =
+            allRequests.where((r) => r['status'] == 'completed').toList();
+
         final filteredCompleted = _filterRequests(
-          allRequests
-              .where(
-                (r) =>
-                    (r['status'] == 'completed') &&
-                    (r['expertUid'] == currentExpertUid),
-              )
-              .toList(),
+          _applyCompletedOwnerFilter(completedBase),
         );
         return Scaffold(
           backgroundColor: Colors.grey[50],
@@ -1233,16 +1300,25 @@ class _ScanRequestListState extends State<ScanRequestList>
                       ],
                     )
                     : (widget.mode == 'completed')
-                        ? (filteredCompleted.isEmpty
+                ? (filteredCompleted.isEmpty
                             ? _buildEmptyState(
                               _searchQuery.isNotEmpty
                                   ? 'No completed requests found for "$_searchQuery"'
                                   : 'No completed requests',
                             )
-                            : ListView.builder(
-                              itemCount: filteredCompleted.length,
-                              itemBuilder: (context, index) =>
-                                  _buildRequestCard(filteredCompleted[index]),
+                            : Column(
+                              children: [
+                                _buildCompletedOwnerFilterBar(),
+                                Expanded(
+                                  child: ListView.builder(
+                                    itemCount: filteredCompleted.length,
+                                    itemBuilder: (context, index) =>
+                                        _buildRequestCard(
+                                          filteredCompleted[index],
+                                        ),
+                                  ),
+                                ),
+                              ],
                             ))
                         : TabBarView(
                           controller: _tabController!,
@@ -1271,10 +1347,19 @@ class _ScanRequestListState extends State<ScanRequestList>
                                       ? 'No completed requests found for "$_searchQuery"'
                                       : 'No completed requests',
                                 )
-                                : ListView.builder(
-                                  itemCount: filteredCompleted.length,
-                                  itemBuilder: (context, index) =>
-                                      _buildRequestCard(filteredCompleted[index]),
+                                : Column(
+                                  children: [
+                                    _buildCompletedOwnerFilterBar(),
+                                    Expanded(
+                                      child: ListView.builder(
+                                        itemCount: filteredCompleted.length,
+                                        itemBuilder: (context, index) =>
+                                            _buildRequestCard(
+                                              filteredCompleted[index],
+                                            ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                           ],
                         ),

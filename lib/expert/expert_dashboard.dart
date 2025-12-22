@@ -11,6 +11,7 @@ import 'package:hive/hive.dart';
 import 'dart:async'; // Added for StreamSubscription
 import 'package:intl/intl.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
+import '../shared/pig_disease_ui.dart';
 import 'expert_chat_inbox_page.dart';
 import '../head_veterinarian/vet_manage_treatments_page.dart';
 import 'expert_notifications_page.dart';
@@ -1177,10 +1178,44 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
       final recentRequestsList =
           allRecentDocs.take(5).map((doc) {
             final data = doc.data() as Map<String, dynamic>;
+            final submittedAt = (data['submittedAt'] ?? '').toString();
+
+            // Prefer expertDiseaseSummary; fall back to model diseaseSummary.
+            final rawSummary =
+                (data['expertDiseaseSummary'] as List?) ??
+                (data['diseaseSummary'] as List?) ??
+                const [];
+            String diseaseDisplay = '—';
+            if (rawSummary.isNotEmpty) {
+              try {
+                final List<Map<String, dynamic>> cleaned = [];
+                for (final e in rawSummary) {
+                  if (e is Map) {
+                    cleaned.add(Map<String, dynamic>.from(e));
+                  }
+                }
+                if (cleaned.isNotEmpty) {
+                  final label = PigDiseaseUI.dominantLabelFromSummary(cleaned);
+                  diseaseDisplay = PigDiseaseUI.displayName(label);
+                }
+              } catch (_) {}
+            }
+
+            // Build human‑readable location from province/city/barangay.
+            final province = (data['province'] ?? '').toString();
+            final city = (data['cityMunicipality'] ?? '').toString();
+            final barangay = (data['barangay'] ?? '').toString();
+            final parts = [
+              if (barangay.isNotEmpty) barangay,
+              if (city.isNotEmpty) city,
+              if (province.isNotEmpty) province,
+            ];
+            final locationDisplay = parts.isNotEmpty ? parts.join(', ') : '—';
+
             return {
-              'date': data['submittedAt'] ?? '',
-              'disease': data['diseaseSummary']?[0]?['disease'] ?? 'Unknown',
-              'location': data['location'] ?? 'Unknown',
+              'date': submittedAt,
+              'disease': diseaseDisplay,
+              'location': locationDisplay,
               'status': data['status'] ?? 'unknown',
             };
           }).toList();
@@ -1793,9 +1828,9 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
                   ],
                 ),
                 const SizedBox(height: 24),
-                // Summary section
+                // Recent activity section
                 Text(
-                  'Summary',
+                  'Recent Reports',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -1983,6 +2018,12 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
     String status,
     Color statusColor,
   ) {
+    String _shorten(String value, int max) {
+      final v = value.trim();
+      if (v.length <= max) return v;
+      return '${v.substring(0, max - 1)}…';
+    }
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -1996,11 +2037,17 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
           ),
           Expanded(
             flex: 3,
-            child: Text(disease, style: const TextStyle(fontSize: 12)),
+            child: Text(
+              _shorten(disease, 18),
+              style: const TextStyle(fontSize: 12),
+            ),
           ),
           Expanded(
             flex: 2,
-            child: Text(location, style: const TextStyle(fontSize: 12)),
+            child: Text(
+              _shorten(location, 18),
+              style: const TextStyle(fontSize: 12),
+            ),
           ),
           Expanded(
             flex: 2,
