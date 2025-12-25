@@ -46,6 +46,7 @@ class _MachineLearningExpertDashboardState
 
   @override
   Widget build(BuildContext context) {
+    final bool showHeader = _selectedIndex != 4; // Profile page has its own header
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
         statusBarColor: Colors.white,
@@ -58,100 +59,104 @@ class _MachineLearningExpertDashboardState
           child: Column(
             children: [
               // Header (match app design language)
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green,
-                  borderRadius: const BorderRadius.only(
-                    bottomRight: Radius.circular(50),
+              if (showHeader)
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green,
+                    borderRadius: const BorderRadius.only(
+                      bottomRight: Radius.circular(50),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 12,
+                        offset: const Offset(0, 6),
+                        spreadRadius: 1,
+                      ),
+                    ],
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 12,
-                      offset: const Offset(0, 6),
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Hello - ${_firstName()}',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        GestureDetector(
-                          // Pages: 0 Home, 1 Scan, 2 History, 3 Completed, 4 Profile
-                          onTap: () => setState(() => _selectedIndex = 4),
-                          child: Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white,
-                              border: Border.all(color: Colors.white, width: 2),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
-                            ),
-                            child: const Icon(
-                              Icons.psychology_alt,
-                              color: Colors.green,
-                              size: 26,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.auto_awesome, color: Colors.white70, size: 18),
-                          SizedBox(width: 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
                           Text(
-                            'Machine Learning Expert Portal',
-                            style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
+                            'Hello - ${_firstName()}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          GestureDetector(
+                            // Pages: 0 Home, 1 Scan, 2 History, 3 Completed, 4 Profile
+                            onTap: () => setState(() => _selectedIndex = 4),
+                            child: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Colors.white,
+                                border: Border.all(color: Colors.white, width: 2),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.psychology_alt,
+                                color: Colors.green,
+                                size: 26,
+                              ),
                             ),
                           ),
                         ],
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      Center(
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const [
+                            Icon(Icons.auto_awesome, color: Colors.white70, size: 18),
+                            SizedBox(width: 6),
+                            Text(
+                              'Machine Learning Expert Portal',
+                              style: TextStyle(
+                                color: Colors.white70,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
               Expanded(child: _pages[_selectedIndex]),
             ],
           ),
         ),
-        bottomNavigationBar: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFF0F8F0),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 8,
-                offset: const Offset(0, -2),
-              ),
-            ],
-          ),
-          child: Row(
+        bottomNavigationBar: SafeArea(
+          top: false,
+          bottom: true,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF0F8F0),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.05),
+                  blurRadius: 8,
+                  offset: const Offset(0, -2),
+                ),
+              ],
+            ),
+            child: Row(
             children: [
               if (_canGoBack())
                 InkWell(
@@ -208,6 +213,7 @@ class _MachineLearningExpertDashboardState
             ],
           ),
         ),
+        ),
       ),
     );
   }
@@ -258,6 +264,7 @@ class _MLExpertHomePage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 8),
+            // Three equal-sized cards in a grid
             Row(
               children: [
                 Expanded(
@@ -277,14 +284,16 @@ class _MLExpertHomePage extends StatelessWidget {
                     onTap: () => dash?.goTo(3),
                   ),
                 ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _ActionCard(
+                    title: 'My Scan\nHistory',
+                    icon: Icons.history,
+                    color: Colors.orange,
+                    onTap: () => dash?.goTo(2),
+                  ),
+                ),
               ],
-            ),
-            const SizedBox(height: 12),
-            _ActionCard(
-              title: 'My Scan History',
-              icon: Icons.history,
-              color: Colors.orange,
-              onTap: () => dash?.goTo(2),
             ),
             const SizedBox(height: 24),
             Text(
@@ -384,37 +393,42 @@ class _ActionCard extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
+        height: 120, // Fixed height for all cards
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 12,
               offset: const Offset(0, 4),
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Container(
-              width: 42,
-              height: 42,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
                 color: color.withOpacity(0.15),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, color: color),
+              child: Icon(icon, color: color, size: 26),
             ),
-            const SizedBox(height: 10),
             Text(
               title,
-              style: const TextStyle(
-                fontWeight: FontWeight.w800,
-                fontSize: 14,
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: Colors.grey[800],
+                height: 1.2,
               ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),

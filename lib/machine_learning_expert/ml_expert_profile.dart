@@ -178,7 +178,7 @@ class _MLExpertProfilePageState extends State<MLExpertProfilePage> {
                               border: Border.all(color: Colors.white.withOpacity(0.3)),
                             ),
                             child: const Text(
-                              'machine_learning_expert',
+                              'Machine Learning Expert',
                               style: TextStyle(
                                 color: Colors.white,
                                 fontSize: 12,

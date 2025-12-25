@@ -18,7 +18,8 @@ class EditProfilePage extends StatefulWidget {
 }
 
 class _EditProfilePageState extends State<EditProfilePage> {
-  final _fullNameController = TextEditingController();
+  final _firstNameController = TextEditingController();
+  final _lastNameController = TextEditingController();
   final _addressController = TextEditingController();
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
@@ -65,8 +66,28 @@ class _EditProfilePageState extends State<EditProfilePage> {
           final street = (data['street'] ?? '').toString();
           final combinedAddress = (data['address'] ?? '').toString();
 
+          final firstName = (data['firstName'] ?? '').toString().trim();
+          final lastName = (data['lastName'] ?? '').toString().trim();
+          final fullName = (data['fullName'] ?? '').toString().trim();
+
+          String fallbackFirst = '';
+          String fallbackLast = '';
+          if (firstName.isEmpty && lastName.isEmpty && fullName.isNotEmpty) {
+            final parts =
+                fullName.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+            if (parts.isNotEmpty) {
+              fallbackFirst = parts.first;
+              if (parts.length > 1) {
+                fallbackLast = parts.sublist(1).join(' ');
+              }
+            }
+          }
+
           setState(() {
-            _fullNameController.text = (data['fullName'] ?? '').toString();
+            _firstNameController.text =
+                firstName.isNotEmpty ? firstName : fallbackFirst;
+            _lastNameController.text =
+                lastName.isNotEmpty ? lastName : fallbackLast;
             _addressController.text =
                 street.isNotEmpty ? street : combinedAddress;
             _phoneController.text = (data['phoneNumber'] ?? '').toString();
@@ -246,13 +267,15 @@ class _EditProfilePageState extends State<EditProfilePage> {
   }
 
   // Validation Functions
-  String? _validateFullName(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Please enter your full name';
-    }
-    if (value.trim().length < 2) {
-      return 'Name must be at least 2 characters';
-    }
+  String? _validateFirstName(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Please enter your first name';
+    if (value.trim().length < 2) return 'First name must be at least 2 characters';
+    return null;
+  }
+
+  String? _validateLastName(String? value) {
+    if (value == null || value.trim().isEmpty) return 'Please enter your last name';
+    if (value.trim().length < 2) return 'Last name must be at least 2 characters';
     return null;
   }
 
@@ -295,7 +318,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
       _hasValidated = true;
       // Validate all fields and store errors
       _fieldErrors = {
-        'fullName': _validateFullName(_fullNameController.text),
+        'firstName': _validateFirstName(_firstNameController.text),
+        'lastName': _validateLastName(_lastNameController.text),
         'address': _validateAddress(_addressController.text),
         'phone': _validatePhone(_phoneController.text),
         'email': _validateEmail(_emailController.text),
@@ -331,6 +355,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
           newImageUrl = await _uploadProfileImage(_profileImage!.path);
         }
 
+        final firstName = _firstNameController.text.trim();
+        final lastName = _lastNameController.text.trim();
+        final fullName = ('$firstName $lastName').trim();
         final street = _addressController.text.trim();
         final province = _selectedProvinceName ?? '';
         final city = _selectedCityName ?? '';
@@ -345,7 +372,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
         // Update user profile in Firestore (structured address same as registration)
         await userRef.update({
-          'fullName': _fullNameController.text.trim(),
+          'firstName': firstName,
+          'lastName': lastName,
+          'fullName': fullName,
           'street': street,
           'province': province,
           'cityMunicipality': city,
@@ -407,7 +436,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
   @override
   void dispose() {
-    _fullNameController.dispose();
+    _firstNameController.dispose();
+    _lastNameController.dispose();
     _addressController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
@@ -865,11 +895,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
                           const SizedBox(height: 30),
                           // Form Fields
                           _buildTextField(
-                            label: 'Full Name',
-                            controller: _fullNameController,
-                            fieldKey: 'fullName',
+                            label: 'First Name',
+                            controller: _firstNameController,
+                            fieldKey: 'firstName',
                             prefixIcon: Icons.person,
-                            validator: _validateFullName,
+                            validator: _validateFirstName,
+                            keyboardType: TextInputType.name,
+                          ),
+                          const SizedBox(height: 16),
+                          _buildTextField(
+                            label: 'Last Name',
+                            controller: _lastNameController,
+                            fieldKey: 'lastName',
+                            prefixIcon: Icons.person_outline,
+                            validator: _validateLastName,
                             keyboardType: TextInputType.name,
                           ),
                           const SizedBox(height: 16),

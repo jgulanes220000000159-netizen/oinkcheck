@@ -1827,21 +1827,26 @@ class _HomePageState extends State<HomePage> {
                     // Home tab (index 0)
                     SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 16),
-                          // Empty space (removed welcome text but keeping the gap)
-                          const SizedBox(height: 0),
-                          // Quick Overview Card
-                          _buildQuickOverviewCard(),
-                          const SizedBox(height: 16),
-                          // Quick Action Buttons
-                          _buildQuickActionButtons(),
-                          const SizedBox(height: 16),
-                          // Recent Activity Section
-                          _buildRecentActivitySection(),
-                          const SizedBox(height: 16),
-                        ],
+                      child: Padding(
+                        padding: EdgeInsets.only(
+                          bottom: MediaQuery.of(context).padding.bottom + 80,
+                        ),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 16),
+                            // Empty space (removed welcome text but keeping the gap)
+                            const SizedBox(height: 0),
+                            // Quick Overview Card
+                            _buildQuickOverviewCard(),
+                            const SizedBox(height: 16),
+                            // Quick Action Buttons
+                            _buildQuickActionButtons(),
+                            const SizedBox(height: 16),
+                            // Recent Activity Section
+                            _buildRecentActivitySection(),
+                            const SizedBox(height: 16),
+                          ],
+                        ),
                       ),
                     ),
                     // Scan tab (index 1)
@@ -1870,6 +1875,8 @@ class _HomePageState extends State<HomePage> {
                   ],
                 ),
                 child: SafeArea(
+                  top: false,
+                  bottom: true,
                   child: Container(
                     height: 60,
                     padding: const EdgeInsets.symmetric(

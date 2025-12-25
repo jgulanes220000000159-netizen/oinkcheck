@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../shared/review_manager.dart';
+import '../shared/pig_disease_ui.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -125,35 +126,70 @@ class _UserRequestTabbedListState extends State<UserRequestTabbedList>
     super.dispose();
   }
 
+  /// Helper to get the dominant disease label from a request (same logic as UserRequestList)
+  String _getDominantDiseaseLabel(Map<String, dynamic> request) {
+    final diseaseSummary =
+        (request['expertDiseaseSummary'] as List?) ??
+        (request['diseaseSummary'] as List?) ??
+        [];
+    if (diseaseSummary.isNotEmpty) {
+      double best = -1;
+      String bestLabel = 'unknown';
+      for (final e in diseaseSummary) {
+        if (e is! Map) continue;
+        final avg = (e['avgConfidence'] as num?)?.toDouble();
+        if (avg == null) continue;
+        final label =
+            (e['label'] ?? e['disease'] ?? e['name'] ?? 'unknown').toString();
+        if (avg > best) {
+          best = avg;
+          bestLabel = label;
+        }
+      }
+      if (best >= 0) return bestLabel;
+    }
+    return 'unknown';
+  }
+
   List<Map<String, dynamic>> _filterRequests(
     List<Map<String, dynamic>> requests,
   ) {
     if (_searchQuery.isEmpty) return requests;
 
-    return requests.where((request) {
-      // Safely get disease name with null and empty checks
-      String diseaseName = '';
-      try {
-        final diseaseSummary = request['diseaseSummary'];
-        if (diseaseSummary != null && 
-            diseaseSummary is List && 
-            diseaseSummary.isNotEmpty &&
-            diseaseSummary[0] != null) {
-          diseaseName = diseaseSummary[0]['name']?.toString().toLowerCase() ?? '';
-        }
-      } catch (e) {
-        // Silently handle any errors in accessing disease summary
-        diseaseName = '';
-      }
-      
-      final status = request['status']?.toString().toLowerCase() ?? '';
-      final submittedAt =
-          request['submittedAt']?.toString().toLowerCase() ?? '';
-      final query = _searchQuery.toLowerCase();
+    final query = _searchQuery.toLowerCase().trim();
+    if (query.isEmpty) return requests;
 
-      return diseaseName.contains(query) ||
-          status.contains(query) ||
-          submittedAt.contains(query);
+    // Check if query looks like a disease name (not a date or status)
+    final isLikelyDiseaseQuery = !RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(query) &&
+                                 query != 'pending' &&
+                                 query != 'completed' &&
+                                 query != 'reviewed';
+
+    return requests.where((request) {
+      // If query looks like a disease, only match the dominant disease (what's shown on the card)
+      if (isLikelyDiseaseQuery) {
+        final dominantLabel = _getDominantDiseaseLabel(request);
+        if (dominantLabel == 'unknown') return false;
+        
+        // Match against raw label (e.g., "swine_pox", "infected_environmental_sunburn")
+        final dominantRaw = dominantLabel.toLowerCase();
+        if (dominantRaw.contains(query)) return true;
+
+        // Match against display name (e.g., "Swine Pox", "Sunburn")
+        final dominantDisplay = PigDiseaseUI.displayName(dominantLabel).toLowerCase();
+        if (dominantDisplay.contains(query)) return true;
+
+        return false;
+      }
+
+      // For non-disease queries (dates, status), check status and date
+      final status = request['status']?.toString().toLowerCase() ?? '';
+      if (status.contains(query)) return true;
+
+      final submittedAt = request['submittedAt']?.toString().toLowerCase() ?? '';
+      if (submittedAt.contains(query)) return true;
+
+      return false;
     }).toList();
   }
 
