@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
 import '../user/edit_profile_page.dart';
 import '../user/login_page.dart';
+import '../shared/app_rating_widget.dart';
 
 class VeterinarianProfilePage extends StatefulWidget {
   const VeterinarianProfilePage({super.key});
@@ -17,6 +18,7 @@ class _VeterinarianProfilePageState extends State<VeterinarianProfilePage> {
   String _name = 'Veterinarian';
   String _email = '';
   String _memberSince = '—';
+  String _userRole = 'head_veterinarian';
 
   @override
   void initState() {
@@ -59,6 +61,7 @@ class _VeterinarianProfilePageState extends State<VeterinarianProfilePage> {
         if (data != null) {
           _name = (data['fullName'] ?? 'Veterinarian').toString();
           _email = (data['email'] ?? user.email ?? '').toString();
+          _userRole = (data['role'] ?? 'head_veterinarian').toString();
           final createdAt = data['createdAt'];
           if (createdAt is Timestamp) {
             final d = createdAt.toDate();
@@ -74,6 +77,7 @@ class _VeterinarianProfilePageState extends State<VeterinarianProfilePage> {
         if (profile is Map) {
           _name = (profile['fullName'] ?? 'Veterinarian').toString();
           _email = (profile['email'] ?? user.email ?? '').toString();
+          _userRole = (profile['role'] ?? 'head_veterinarian').toString();
         }
       }
     } finally {
@@ -316,7 +320,9 @@ class _VeterinarianProfilePageState extends State<VeterinarianProfilePage> {
                         ],
                       ),
                     ),
-
+                    const SizedBox(height: 16),
+                    // App Rating Section
+                    AppRatingWidget(userRole: _userRole),
                     const SizedBox(height: 18),
                   ],
                 ),

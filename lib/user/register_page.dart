@@ -1,12 +1,10 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'login_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
 import '../shared/geocoding_service.dart';
+import '../shared/davao_del_norte_locations.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({Key? key}) : super(key: key);
@@ -78,37 +76,30 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   void initState() {
     super.initState();
-    _loadProvinces();
+    _loadLocations();
   }
 
-  // --- Location loading using PSGC API (Philippines) ---
-  Future<void> _loadProvinces() async {
-    try {
-      final response = await http
-          .get(Uri.parse('https://psgc.gitlab.io/api/provinces/'));
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        setState(() {
-          _provinces = data
-              .map<Map<String, String>>(
-                (p) => {
-                  'code': p['code']?.toString() ?? '',
-                  'name': p['name']?.toString() ?? '',
-                },
-              )
-              .where((p) => p['code']!.isNotEmpty && p['name']!.isNotEmpty)
-              .toList()
-            ..sort(
-              (a, b) => a['name']!.compareTo(b['name']!),
-            );
-        });
-      }
-    } catch (_) {
-      // Fail silently – user can still type full address
+  // --- Location loading using static Davao del Norte data ---
+  Future<void> _loadLocations() async {
+    await DavaoDelNorteLocations.load();
+    final province = DavaoDelNorteLocations.getProvince();
+    if (province != null) {
+      final provinceName = province['name']?.toString() ?? 'Davao del Norte';
+      setState(() {
+        _provinces = [
+          {
+            'code': province['code']?.toString() ?? '',
+            'name': provinceName,
+          }
+        ];
+        _selectedProvinceCode = province['code']?.toString();
+        _selectedProvinceName = provinceName; // Use exact same string
+      });
+      _loadCitiesForProvince();
     }
   }
 
-  Future<void> _loadCitiesForProvince(String provinceCode) async {
+  Future<void> _loadCitiesForProvince() async {
     setState(() {
       _cities = [];
       _barangays = [];
@@ -116,32 +107,19 @@ class _RegisterPageState extends State<RegisterPage> {
       _selectedCityName = null;
       _selectedBarangayName = null;
     });
-    try {
-      final response = await http.get(
-        Uri.parse('https://psgc.gitlab.io/api/cities-municipalities/'),
-      );
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        final filtered = data.where((c) {
-          final pCode = (c['provinceCode'] ?? c['province_code'])?.toString();
-          return pCode == provinceCode;
-        }).toList();
-        setState(() {
-          _cities = filtered
-              .map<Map<String, String>>(
-                (c) => {
-                  'code': c['code']?.toString() ?? '',
-                  'name': c['name']?.toString() ?? '',
-                },
-              )
-              .where((c) => c['code']!.isNotEmpty && c['name']!.isNotEmpty)
-              .toList()
-            ..sort(
-              (a, b) => a['name']!.compareTo(b['name']!),
-            );
-        });
-      }
-    } catch (_) {}
+    
+    final cities = DavaoDelNorteLocations.getCities();
+    setState(() {
+      _cities = cities
+          .map<Map<String, String>>(
+            (c) => {
+              'code': c['code']?.toString() ?? '',
+              'name': c['name']?.toString() ?? '',
+            },
+          )
+          .toList();
+    });
+    print('✅ Loaded ${_cities.length} cities/municipalities for Davao del Norte');
   }
 
   Future<void> _loadBarangaysForCity(String cityCode) async {
@@ -149,32 +127,19 @@ class _RegisterPageState extends State<RegisterPage> {
       _barangays = [];
       _selectedBarangayName = null;
     });
-    try {
-      final response = await http.get(
-        Uri.parse('https://psgc.gitlab.io/api/barangays/'),
-      );
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        final filtered = data.where((b) {
-          final cCode = (b['cityCode'] ?? b['city_code'])?.toString();
-          return cCode == cityCode;
-        }).toList();
-        setState(() {
-          _barangays = filtered
-              .map<Map<String, String>>(
-                (b) => {
-                  'code': b['code']?.toString() ?? '',
-                  'name': b['name']?.toString() ?? '',
-                },
-              )
-              .where((b) => b['code']!.isNotEmpty && b['name']!.isNotEmpty)
-              .toList()
-            ..sort(
-              (a, b) => a['name']!.compareTo(b['name']!),
-            );
-        });
-      }
-    } catch (_) {}
+    
+    final barangays = DavaoDelNorteLocations.getBarangaysForCity(cityCode);
+    setState(() {
+      _barangays = barangays
+          .map<Map<String, String>>(
+            (b) => {
+              'code': b['code']?.toString() ?? '',
+              'name': b['name']?.toString() ?? '',
+            },
+          )
+          .toList();
+    });
+    print('✅ Loaded ${_barangays.length} barangays for city code $cityCode');
   }
 
   // Form validation
@@ -929,7 +894,10 @@ class _RegisterPageState extends State<RegisterPage> {
                             // ADDRESS
                             label('ADDRESS'),
                             DropdownButtonFormField<String>(
-                              value: _selectedProvinceName,
+                              value: _provinces.isNotEmpty && 
+                                     _provinces.any((p) => p['name'] == _selectedProvinceName)
+                                  ? _selectedProvinceName
+                                  : null,
                               isExpanded: true,
                               decoration: dropdownDecoration(
                                 hint: 'Select province',
@@ -961,10 +929,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                   );
                                   _selectedProvinceCode = match['code'];
                                 });
-                                if (_selectedProvinceCode != null &&
-                                    _selectedProvinceCode!.isNotEmpty) {
-                                  _loadCitiesForProvince(_selectedProvinceCode!);
-                                }
+                                _loadCitiesForProvince();
                               },
                             ),
                             const SizedBox(height: 10),

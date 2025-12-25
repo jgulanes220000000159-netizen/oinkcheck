@@ -15,6 +15,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/painting.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import '../shared/app_rating_widget.dart';
 
 class ExpertProfile extends StatefulWidget {
   const ExpertProfile({Key? key}) : super(key: key);
@@ -1708,6 +1709,9 @@ class _ExpertProfileState extends State<ExpertProfile> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    // App Rating Section
+                    AppRatingWidget(userRole: _userRole.toLowerCase()),
                     const SizedBox(height: 16),
                     // Preferences Section
                     Container(

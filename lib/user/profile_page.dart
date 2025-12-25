@@ -15,6 +15,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/painting.dart';
+import '../shared/app_rating_widget.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({Key? key}) : super(key: key);
@@ -1170,6 +1171,9 @@ class _ProfilePageState extends State<ProfilePage> {
                         ],
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    // App Rating Section
+                    AppRatingWidget(userRole: _userRole.toLowerCase()),
                     const SizedBox(height: 16),
                     // Preferences Section
                     Container(

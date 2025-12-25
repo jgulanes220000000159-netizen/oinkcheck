@@ -78,6 +78,7 @@ flutter:
     - assets/lang/bs.json
     - assets/animation.gif
     - assets/ph_locations.json
+    - assets/davao_del_norte_locations.json
     - .env
     # Add any other image or asset files here
     # - assets/images/your_image.jpg

@@ -6,9 +6,8 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:mime/mime.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
 import '../shared/geocoding_service.dart';
+import '../shared/davao_del_norte_locations.dart';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({Key? key}) : super(key: key);
@@ -44,7 +43,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   void initState() {
     super.initState();
-    _loadProvinces();
+    _loadLocations();
     _loadUserData();
   }
 
@@ -99,10 +98,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 (data['province'] ?? '').toString().isNotEmpty
                     ? (data['province'] ?? '').toString()
                     : null;
-            _selectedCityName =
-                (data['cityMunicipality'] ?? '').toString().isNotEmpty
-                    ? (data['cityMunicipality'] ?? '').toString()
-                    : null;
+            // Normalize city name to match JSON format (e.g., "City of Panabo" -> "Panabo City")
+            final rawCityName = (data['cityMunicipality'] ?? '').toString();
+            _selectedCityName = rawCityName.isNotEmpty
+                ? _normalizeCityName(rawCityName)
+                : null;
             _selectedBarangayName =
                 (data['barangay'] ?? '').toString().isNotEmpty
                     ? (data['barangay'] ?? '').toString()
@@ -120,85 +120,81 @@ class _EditProfilePageState extends State<EditProfilePage> {
     }
   }
 
-  // --- Location loading using PSGC API (Philippines) ---
-  Future<void> _loadProvinces() async {
-    try {
-      final response =
-          await http.get(Uri.parse('https://psgc.gitlab.io/api/provinces/'));
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        setState(() {
-          _provinces = data
-              .map<Map<String, String>>(
-                (p) => {
-                  'code': p['code']?.toString() ?? '',
-                  'name': p['name']?.toString() ?? '',
-                },
-              )
-              .where((p) => p['code']!.isNotEmpty && p['name']!.isNotEmpty)
-              .toList()
-            ..sort((a, b) => a['name']!.compareTo(b['name']!));
-
-          // If we already know the province name from Firestore, map it to a code
-          if (_selectedProvinceName != null) {
-            final match = _provinces.firstWhere(
-              (p) => p['name'] == _selectedProvinceName,
-              orElse: () => {},
-            );
-            if (match.isNotEmpty) {
-              _selectedProvinceCode = match['code'];
-              _loadCitiesForProvince(_selectedProvinceCode!);
-            }
+  // --- Location loading using static Davao del Norte data ---
+  Future<void> _loadLocations() async {
+    await DavaoDelNorteLocations.load();
+    final province = DavaoDelNorteLocations.getProvince();
+    if (province != null) {
+      final provinceName = province['name']?.toString() ?? 'Davao del Norte';
+      setState(() {
+        _provinces = [
+          {
+            'code': province['code']?.toString() ?? '',
+            'name': provinceName,
           }
-        });
-      }
-    } catch (_) {
-      // Fail silently – user can still type street and keep old province/city/barangay
+        ];
+        // If we already know the province name from Firestore, use it (but normalize to match)
+        if (_selectedProvinceName == null) {
+          _selectedProvinceCode = province['code']?.toString();
+          _selectedProvinceName = provinceName; // Use exact same string
+        } else {
+          // Match existing province name - normalize to match JSON value
+          _selectedProvinceCode = province['code']?.toString();
+          _selectedProvinceName = provinceName; // Always use the JSON value to ensure match
+        }
+      });
+      _loadCitiesForProvince();
     }
   }
 
-  Future<void> _loadCitiesForProvince(String provinceCode) async {
+  Future<void> _loadCitiesForProvince() async {
     setState(() {
       _cities = [];
       _barangays = [];
       _selectedCityCode = null;
       // keep _selectedCityName / _selectedBarangayName; we'll remap after load
     });
-    try {
-      final response = await http.get(
-        Uri.parse('https://psgc.gitlab.io/api/cities-municipalities/'),
-      );
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        final filtered = data.where((c) {
-          final pCode = (c['provinceCode'] ?? c['province_code'])?.toString();
-          return pCode == provinceCode;
-        }).toList();
-        setState(() {
-          _cities = filtered
-              .map<Map<String, String>>(
-                (c) => {
-                  'code': c['code']?.toString() ?? '',
-                  'name': c['name']?.toString() ?? '',
-                },
-              )
-              .where((c) => c['code']!.isNotEmpty && c['name']!.isNotEmpty)
-              .toList()
-            ..sort((a, b) => a['name']!.compareTo(b['name']!));
+    
+    final cities = DavaoDelNorteLocations.getCities();
+    setState(() {
+      _cities = cities
+          .map<Map<String, String>>(
+            (c) => {
+              'code': c['code']?.toString() ?? '',
+              'name': c['name']?.toString() ?? '',
+            },
+          )
+          .toList();
 
-          if (_selectedCityName != null) {
-            final match = _cities.firstWhere(
-              (c) => c['name'] == _selectedCityName,
-              orElse: () => {},
-            );
-            if (match.isNotEmpty) {
-              _selectedCityCode = match['code'];
-              _loadBarangaysForCity(_selectedCityCode!);
-            }
-          }
-        });
+      print('✅ Loaded ${_cities.length} cities/municipalities for Davao del Norte');
+
+      if (_selectedCityName != null) {
+        // Try exact match first
+        var match = _cities.firstWhere(
+          (c) => c['name'] == _selectedCityName,
+          orElse: () => {},
+        );
+        
+        // If no exact match, try normalized match
+        if (match.isEmpty) {
+          final normalized = _normalizeCityName(_selectedCityName!);
+          match = _cities.firstWhere(
+            (c) => _normalizeCityName(c['name'] ?? '') == normalized,
+            orElse: () => {},
+          );
+        }
+        
+        if (match.isNotEmpty) {
+          _selectedCityCode = match['code'];
+          _selectedCityName = match['name']; // Use the exact JSON name
+          _loadBarangaysForCity(_selectedCityCode!);
+        } else {
+          // No match found, clear selection
+          _selectedCityName = null;
+          _selectedCityCode = null;
+        }
       }
-    } catch (_) {}
+    });
   }
 
   Future<void> _loadBarangaysForCity(String cityCode) async {
@@ -206,30 +202,20 @@ class _EditProfilePageState extends State<EditProfilePage> {
       _barangays = [];
       // keep _selectedBarangayName; we'll remap after load
     });
-    try {
-      final response = await http.get(
-        Uri.parse('https://psgc.gitlab.io/api/barangays/'),
-      );
-      if (response.statusCode == 200) {
-        final List<dynamic> data = jsonDecode(response.body);
-        final filtered = data.where((b) {
-          final cCode = (b['cityCode'] ?? b['city_code'])?.toString();
-          return cCode == cityCode;
-        }).toList();
-        setState(() {
-          _barangays = filtered
-              .map<Map<String, String>>(
-                (b) => {
-                  'code': b['code']?.toString() ?? '',
-                  'name': b['name']?.toString() ?? '',
-                },
-              )
-              .where((b) => b['code']!.isNotEmpty && b['name']!.isNotEmpty)
-              .toList()
-            ..sort((a, b) => a['name']!.compareTo(b['name']!));
-        });
-      }
-    } catch (_) {}
+    
+    final barangays = DavaoDelNorteLocations.getBarangaysForCity(cityCode);
+    setState(() {
+      _barangays = barangays
+          .map<Map<String, String>>(
+            (b) => {
+              'code': b['code']?.toString() ?? '',
+              'name': b['name']?.toString() ?? '',
+            },
+          )
+          .toList();
+      
+      print('✅ Loaded ${_barangays.length} barangays for city code $cityCode');
+    });
   }
 
   Future<void> _pickProfileImage() async {
@@ -264,6 +250,32 @@ class _EditProfilePageState extends State<EditProfilePage> {
       print('Error uploading profile image: $e');
       rethrow;
     }
+  }
+
+  // Normalize city name to match JSON format
+  // Handles variations like "City of Panabo" -> "Panabo City"
+  String _normalizeCityName(String cityName) {
+    final name = cityName.trim();
+    final lower = name.toLowerCase();
+    
+    // Handle "City of X" -> "X City"
+    if (lower.startsWith('city of ')) {
+      final cityPart = name.substring(8).trim(); // Remove "City of "
+      return '$cityPart City';
+    }
+    
+    // Handle "Municipality of X" -> "X"
+    if (lower.startsWith('municipality of ')) {
+      return name.substring(15).trim(); // Remove "Municipality of "
+    }
+    
+    // Handle "Island Garden City of X" -> "Island Garden City of X" (keep as-is)
+    if (lower.startsWith('island garden city of ')) {
+      return name; // Keep full name
+    }
+    
+    // Return as-is if already in correct format
+    return name;
   }
 
   // Validation Functions
@@ -566,7 +578,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
         Text('Province', style: labelStyle),
         const SizedBox(height: 6),
         DropdownButtonFormField<String>(
-          value: _selectedProvinceName,
+          value: _provinces.isNotEmpty && 
+                 _provinces.any((p) => p['name'] == _selectedProvinceName)
+              ? _selectedProvinceName
+              : null,
           dropdownColor: Colors.white,
           decoration: InputDecoration(
             filled: true,
@@ -620,7 +635,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 _provinces.firstWhere((p) => p['name'] == value, orElse: () => {});
             if (match.isNotEmpty && match['code'] != null) {
               _selectedProvinceCode = match['code'];
-              _loadCitiesForProvince(_selectedProvinceCode!);
+                                  _loadCitiesForProvince();
             }
           },
         ),
@@ -636,7 +651,10 @@ class _EditProfilePageState extends State<EditProfilePage> {
         Text('City / Municipality', style: labelStyle),
         const SizedBox(height: 6),
         DropdownButtonFormField<String>(
-          value: _selectedCityName,
+          value: _cities.isNotEmpty && 
+                 _cities.any((c) => c['name'] == _selectedCityName)
+              ? _selectedCityName
+              : null,
           dropdownColor: Colors.white,
           decoration: InputDecoration(
             filled: true,
