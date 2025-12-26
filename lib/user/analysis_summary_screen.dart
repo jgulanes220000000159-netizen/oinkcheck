@@ -527,10 +527,11 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
     final color = DetectionPainter.diseaseColors[disease] ?? Colors.grey;
     final isHealthy = disease.toLowerCase() == 'healthy';
     final isUnknown = disease.toLowerCase() == 'unknown';
+    // Show recommendations if ANY detection (maxConfidence) is >= 70%, even if average is lower
     final canShowRecommendation =
         !isHealthy &&
         !isUnknown &&
-        avgConfidence >= _recommendationAvgThreshold;
+        maxConfidence >= _recommendationAvgThreshold;
 
     return Card(
       elevation: 4,
@@ -1527,14 +1528,14 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
           return bAvg.compareTo(aAvg);
         });
 
-    // Farmer feedback: if confidence is low, recommendations are hidden.
+    // Farmer feedback: if max confidence is low, recommendations are hidden.
     final lowConfidenceDiseases =
         sortedDiseases.where((e) {
           final label = e.key.toString();
           final key = PigDiseaseUI.normalizeKey(label);
           if (key == 'healthy' || key == 'unknown') return false;
-          final avg = (e.value['avg'] as double?) ?? 0.0;
-          return avg < _recommendationAvgThreshold;
+          final max = (e.value['max'] as double?) ?? 0.0;
+          return max < _recommendationAvgThreshold;
         }).toList();
 
     return Scaffold(
@@ -1691,7 +1692,7 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
                                         const SizedBox(width: 10),
                                         Expanded(
                                           child: Text(
-                                            'Some detections are below ${(_recommendationAvgThreshold * 100).toStringAsFixed(0)}% average confidence. Recommendations are hidden for these results and are intended for expert review/confirmation.',
+                                            'Some detections are below ${(_recommendationAvgThreshold * 100).toStringAsFixed(0)}% confidence. Recommendations are hidden for these results and are intended for expert review/confirmation.',
                                             style: TextStyle(
                                               color: Colors.orange[900],
                                               fontSize: 13,

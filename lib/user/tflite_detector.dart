@@ -24,7 +24,7 @@ class TFLiteDetector {
   int _modelClassCount = 0;
   int _inputSize = 640;
   // YOLO exports often need a lower threshold on mobile images.
-  static const double confidenceThreshold = 0.25;
+  static const double confidenceThreshold = 0.35;
   static const double nmsThreshold =
       0.3; // Increased from 0.1 to 0.3 to allow more detections
 
@@ -78,7 +78,7 @@ class TFLiteDetector {
               .map((e) => e.trim())
               .where((e) => e.isNotEmpty && e.toLowerCase() != 'place')
               .toList();
-      _interpreter = await Interpreter.fromAsset('assets/vv8.tflite');
+      _interpreter = await Interpreter.fromAsset('assets/vv9.tflite');
 
       final inTensor = _interpreter!.getInputTensor(0);
       final outTensor = _interpreter!.getOutputTensor(0);
@@ -251,6 +251,16 @@ class TFLiteDetector {
         }
 
         if (finalConf > _currentConfidenceThreshold) {
+          // Additional validation: reject if objectness is very low (likely false positive)
+          // This helps catch cases where class score is high but there's no actual object
+          if (useObjectness && obj < 0.15 && finalConf < 0.6) {
+            print(
+              '⚠️  Skipping detection with low objectness: ${_getDiseaseLabel(maxClass)} '
+              'conf=${(finalConf * 100).toStringAsFixed(1)}% obj=${obj.toStringAsFixed(3)}',
+            );
+            continue;
+          }
+
           validDetections++;
           // YOLO outputs normalized coordinates (0-1) for center point and dimensions
           final centerX = outputData[0][i];
@@ -287,11 +297,33 @@ class TFLiteDetector {
           final right = originalCenterX + (originalWidth / 2);
           final bottom = originalCenterY + (originalHeight / 2);
 
+          // Validate bounding box coordinates
+          final box = Rect.fromLTRB(
+            left.clamp(0, image.width.toDouble()),
+            top.clamp(0, image.height.toDouble()),
+            right.clamp(0, image.width.toDouble()),
+            bottom.clamp(0, image.height.toDouble()),
+          );
+
+          // Reject if bounding box is suspiciously large (covers >95% of image)
+          final boxArea = box.width * box.height;
+          final imageArea = image.width * image.height;
+          final coverageRatio = boxArea / imageArea;
+
+          if (coverageRatio > 0.95 && finalConf < 0.7) {
+            print(
+              '⚠️  Skipping detection with suspiciously large bounding box: '
+              '${_getDiseaseLabel(maxClass)} conf=${(finalConf * 100).toStringAsFixed(1)}% '
+              'coverage=${(coverageRatio * 100).toStringAsFixed(1)}%',
+            );
+            continue;
+          }
+
           detections.add(
             DetectionResult(
               label: _getDiseaseLabel(maxClass),
               confidence: finalConf,
-              boundingBox: Rect.fromLTRB(left, top, right, bottom),
+              boundingBox: box,
             ),
           );
         }
@@ -327,13 +359,45 @@ class TFLiteDetector {
         '   - Best class-only: $bestClsOnlyLabel ${(bestClsOnly * 100).toStringAsFixed(2)}%',
       );
 
-      if (results.isNotEmpty) {
+      // Filter out suspicious detections (likely false positives)
+      final filteredResults = <DetectionResult>[];
+      for (var result in results) {
+        final box = result.boundingBox;
+        final boxArea = box.width * box.height;
+        final imageArea = image.width * image.height;
+        final coverageRatio = boxArea / imageArea;
+
+        // Reject detections that cover too much of the image (likely false positives)
+        // Also reject if confidence is suspiciously low (around 0.5 suggests random noise)
+        if (coverageRatio > 0.95 && result.confidence < 0.6) {
+          print(
+            '⚠️  Rejected suspicious detection: ${result.label} ${(result.confidence * 100).toStringAsFixed(1)}% '
+            '(coverage: ${(coverageRatio * 100).toStringAsFixed(1)}%, likely false positive)',
+          );
+          continue;
+        }
+
+        // Reject if objectness is very low (even if it passed threshold)
+        // This helps catch cases where class score is high but there's no actual object
+        if (useObjectness && bestObj < 0.1 && result.confidence < 0.6) {
+          print(
+            '⚠️  Rejected low objectness detection: ${result.label} ${(result.confidence * 100).toStringAsFixed(1)}% '
+            '(objectness: ${bestObj.toStringAsFixed(3)}, likely false positive)',
+          );
+          continue;
+        }
+
+        filteredResults.add(result);
+      }
+
+      if (filteredResults.isNotEmpty) {
         print('🎯 Detected objects:');
-        for (var result in results) {
+        for (var result in filteredResults) {
           print(
             '   - ${result.label}: ${(result.confidence * 100).toStringAsFixed(1)}% at ${result.boundingBox}',
           );
         }
+        return filteredResults;
       } else {
         print('⚠️  No objects detected! Consider:');
         print(
@@ -343,8 +407,15 @@ class TFLiteDetector {
         print('   - Verifying image quality and lighting');
 
         // Fallback: if objectness is effectively absent (or tiny), treat as image-level classification.
-        // This makes "healthy" produce a meaningful confidence instead of ~0%.
-        if (!useObjectness && bestClsOnlyLabel != 'none') {
+        // BUT: Only use this if the class confidence is reasonably high (>= 0.7) to avoid false positives
+        // This makes "healthy" produce a meaningful confidence instead of ~0%, but prevents
+        // false positives on empty/white background images.
+        if (!useObjectness &&
+            bestClsOnlyLabel != 'none' &&
+            bestClsOnly >= 0.7) {
+          print(
+            '   - Using class-only fallback: $bestClsOnlyLabel ${(bestClsOnly * 100).toStringAsFixed(1)}%',
+          );
           return [
             DetectionResult(
               label: bestClsOnlyLabel,
@@ -358,6 +429,10 @@ class TFLiteDetector {
             ),
           ];
         }
+
+        print(
+          '   - Best class-only score too low (${(bestClsOnly * 100).toStringAsFixed(1)}%), rejecting to avoid false positives',
+        );
       }
 
       return results;

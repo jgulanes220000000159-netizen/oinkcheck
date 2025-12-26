@@ -124,92 +124,20 @@ class _DiseasesPageState extends State<DiseasesPage> {
     super.dispose();
   }
 
-  Widget _buildDiseaseInfoCard(String name, {List<String>? overrideTreatments}) {
+  Widget _buildDiseaseInfoCard(
+    String name, {
+    List<String>? overrideTreatments,
+  }) {
     final info = _diseaseInfo[name];
     final treatments =
         overrideTreatments ?? (info?['treatments'] as List<String>? ?? []);
+    final diseaseId = _diseaseIdFromName(name);
 
-    return Container(
-      margin: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              DiseaseImage(
-                diseaseId: _diseaseIdFromName(name),
-                size: 56,
-                borderRadius: 10,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // Treatment label
-          const Text(
-            'Treatment:',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: Colors.black,
-            ),
-          ),
-          const SizedBox(height: 2),
-          // Treatment Strategies subtitle
-          const Text(
-            'Treatment Strategies',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.normal,
-              color: Colors.black,
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Treatment list
-          ...treatments
-              .map(
-                (treatment) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        '• ',
-                        style: TextStyle(fontSize: 14, color: Colors.black87),
-                      ),
-                      Expanded(
-                        child: Text(
-                          treatment,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: Colors.black87,
-                            height: 1.5,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              )
-              .toList(),
-        ],
-      ),
+    return _DiseaseCard(
+      diseaseName: name,
+      diseaseId: diseaseId,
+      treatments: treatments,
+      scientificName: info?['scientificName'] as String?,
     );
   }
 
@@ -227,8 +155,15 @@ class _DiseasesPageState extends State<DiseasesPage> {
               height: 44,
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(4),
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.grey[300]!),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: TextField(
                 controller: _searchController,
@@ -281,38 +216,41 @@ class _DiseasesPageState extends State<DiseasesPage> {
                 }
 
                 // ALWAYS show the 7 diseases. If approved exists, use it; otherwise fallback to static.
-                var items = _defaultDiseases
-                    .map((d) {
-                      final id = d['id']!;
-                      final name = d['name']!;
-                      final approved = approvedByDiseaseId[id];
-                      final treatments = approved != null
-                          ? (approved['treatments'] as List? ?? [])
-                              .map((e) => e.toString())
-                              .toList()
-                          : (_diseaseInfo[name]?['treatments'] as List<String>? ?? []);
-                      return {
-                        'id': id,
-                        'name': name,
-                        'treatments': treatments,
-                        'isApproved': approved != null,
-                      };
-                    })
-                    .toList()
-                  ..sort((a, b) {
-                    final an = (a['name'] as String).toLowerCase();
-                    final bn = (b['name'] as String).toLowerCase();
-                    return an.compareTo(bn);
-                  });
+                var items =
+                    _defaultDiseases.map((d) {
+                        final id = d['id']!;
+                        final name = d['name']!;
+                        final approved = approvedByDiseaseId[id];
+                        final treatments =
+                            approved != null
+                                ? (approved['treatments'] as List? ?? [])
+                                    .map((e) => e.toString())
+                                    .toList()
+                                : (_diseaseInfo[name]?['treatments']
+                                        as List<String>? ??
+                                    []);
+                        return {
+                          'id': id,
+                          'name': name,
+                          'treatments': treatments,
+                          'isApproved': approved != null,
+                        };
+                      }).toList()
+                      ..sort((a, b) {
+                        final an = (a['name'] as String).toLowerCase();
+                        final bn = (b['name'] as String).toLowerCase();
+                        return an.compareTo(bn);
+                      });
 
                 if (_searchQuery.isNotEmpty) {
-                  items = items
-                      .where(
-                        (m) => (m['name'] as String)
-                            .toLowerCase()
-                            .contains(_searchQuery),
-                      )
-                      .toList();
+                  items =
+                      items
+                          .where(
+                            (m) => (m['name'] as String).toLowerCase().contains(
+                              _searchQuery,
+                            ),
+                          )
+                          .toList();
                 }
 
                 if (items.isEmpty) {
@@ -339,16 +277,351 @@ class _DiseasesPageState extends State<DiseasesPage> {
                 }
 
                 return ListView.builder(
-                  padding: const EdgeInsets.only(top: 16, bottom: 16),
+                  padding: const EdgeInsets.only(top: 8, bottom: 16),
                   itemCount: items.length,
                   itemBuilder: (context, index) {
                     final item = items[index];
                     final name = item['name'] as String;
-                    final treatments = (item['treatments'] as List).cast<String>();
-                    return _buildDiseaseInfoCard(name, overrideTreatments: treatments);
+                    final treatments =
+                        (item['treatments'] as List).cast<String>();
+                    return _buildDiseaseInfoCard(
+                      name,
+                      overrideTreatments: treatments,
+                    );
                   },
                 );
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Professional disease card with expandable details and larger image view
+class _DiseaseCard extends StatefulWidget {
+  final String diseaseName;
+  final String diseaseId;
+  final List<String> treatments;
+  final String? scientificName;
+
+  const _DiseaseCard({
+    required this.diseaseName,
+    required this.diseaseId,
+    required this.treatments,
+    this.scientificName,
+  });
+
+  @override
+  State<_DiseaseCard> createState() => _DiseaseCardState();
+}
+
+class _DiseaseCardState extends State<_DiseaseCard> {
+  bool _isExpanded = false;
+  static const int _previewCount = 2;
+
+  void _showFullImage() {
+    showDialog(
+      context: context,
+      builder:
+          (context) => Dialog(
+            backgroundColor: Colors.transparent,
+            insetPadding: const EdgeInsets.all(16),
+            child: Stack(
+              children: [
+                Container(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.7,
+                    maxWidth: MediaQuery.of(context).size.width * 0.9,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                widget.diseaseName,
+                                style: const TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(
+                                Icons.close,
+                                color: Colors.black87,
+                              ),
+                              onPressed: () => Navigator.of(context).pop(),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Flexible(
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: DiseaseImage(
+                              diseaseId: widget.diseaseId,
+                              size: 300,
+                              borderRadius: 12,
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (widget.scientificName != null) ...[
+                        const SizedBox(height: 12),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text(
+                            widget.scientificName!,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontStyle: FontStyle.italic,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final previewTreatments =
+        _isExpanded
+            ? widget.treatments
+            : widget.treatments.take(_previewCount).toList();
+    final hasMore = widget.treatments.length > _previewCount;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with image and name
+          InkWell(
+            onTap: _showFullImage,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(16),
+              topRight: Radius.circular(16),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green[50],
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              child: Row(
+                children: [
+                  // Disease image - clickable
+                  Hero(
+                    tag: 'disease_${widget.diseaseId}',
+                    child: Material(
+                      color: Colors.transparent,
+                      child: DiseaseImage(
+                        diseaseId: widget.diseaseId,
+                        size: 80,
+                        borderRadius: 12,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.diseaseName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        if (widget.scientificName != null) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.scientificName!,
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontStyle: FontStyle.italic,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.medical_services,
+                              size: 16,
+                              color: Colors.green[700],
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${widget.treatments.length} Treatment${widget.treatments.length != 1 ? 's' : ''}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.green[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.zoom_in, color: Colors.green[700], size: 24),
+                ],
+              ),
+            ),
+          ),
+          // Treatment details
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.healing, size: 20, color: Colors.green[700]),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Treatment Strategies',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                ...previewTreatments.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final treatment = entry.value;
+                  return Padding(
+                    padding: EdgeInsets.only(
+                      bottom: index < previewTreatments.length - 1 ? 10 : 0,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          margin: const EdgeInsets.only(top: 6, right: 12),
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: Colors.green[600],
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        Expanded(
+                          child: Text(
+                            treatment,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              color: Colors.black87,
+                              height: 1.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+                if (hasMore && !_isExpanded) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _isExpanded = true;
+                      });
+                    },
+                    icon: const Icon(Icons.expand_more, size: 20),
+                    label: Text(
+                      'Show ${widget.treatments.length - _previewCount} more',
+                      style: TextStyle(
+                        color: Colors.green[700],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ],
+                if (_isExpanded) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _isExpanded = false;
+                      });
+                    },
+                    icon: const Icon(Icons.expand_less, size: 20),
+                    label: const Text(
+                      'Show less',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],

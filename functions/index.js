@@ -1,6 +1,7 @@
-/* Cloud Functions for MangoSense notifications */
+/* Cloud Functions for OinkCheck notifications */
 
-const functions = require("firebase-functions");
+const functions = require("firebase-functions/v1");
+const { defineString } = require("firebase-functions/params");
 const admin = require("firebase-admin");
 const nodemailer = require("nodemailer");
 
@@ -14,20 +15,31 @@ try {
 const db = admin.firestore();
 const messaging = admin.messaging();
 
-// Email configuration
-const transporter = nodemailer.createTransport({
-  service: "gmail", // You can change this to other services
-  auth: {
-    user: functions.config().gmail?.email || "your-email@gmail.com",
-    pass: functions.config().gmail?.password || "your-app-password",
-  },
+// Email configuration using environment parameters (v7 compatible)
+const gmailEmail = defineString("GMAIL_EMAIL", {
+  default: "your-email@gmail.com",
 });
+const gmailPassword = defineString("GMAIL_PASSWORD", {
+  default: "your-app-password",
+});
+
+// Function to get transporter (lazy initialization to avoid calling .value() at module level)
+function getTransporter() {
+  return nodemailer.createTransport({
+    service: "gmail", // You can change this to other services
+    auth: {
+      user: gmailEmail.value(),
+      pass: gmailPassword.value(),
+    },
+  });
+}
 
 // Function to send email notification
 async function sendEmailNotification(to, subject, htmlContent) {
   try {
+    const transporter = getTransporter();
     const mailOptions = {
-      from: functions.config().gmail?.email || "your-email@gmail.com",
+      from: gmailEmail.value(),
       to: to,
       subject: subject,
       html: htmlContent,
@@ -53,6 +65,45 @@ async function sendToTokens(tokens, payload) {
   return response;
 }
 
+// Utility: Save notification to Firestore
+async function saveNotificationToFirestore(userId, notificationData) {
+  try {
+    const notificationId = db.collection("notifications").doc().id;
+    await db
+      .collection("notifications")
+      .doc(notificationId)
+      .set({
+        id: notificationId,
+        userId: userId,
+        type: notificationData.type || "general",
+        title: notificationData.title || "",
+        body: notificationData.body || "",
+        data: notificationData.data || {},
+        isRead: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        readAt: null,
+      });
+    return notificationId;
+  } catch (error) {
+    console.error("Error saving notification to Firestore:", error);
+    return null;
+  }
+}
+
+// Utility: Get all expert user IDs
+async function getAllExpertUserIds() {
+  try {
+    const expertsSnapshot = await db
+      .collection("users")
+      .where("role", "in", ["expert", "head_veterinarian"])
+      .get();
+    return expertsSnapshot.docs.map((doc) => doc.id);
+  } catch (error) {
+    console.error("Error getting expert user IDs:", error);
+    return [];
+  }
+}
+
 // Trigger 1: When a new scan request is created → notify experts
 exports.notifyExpertsOnNewRequest = functions.firestore
   .document("scan_requests/{requestId}")
@@ -67,8 +118,8 @@ exports.notifyExpertsOnNewRequest = functions.firestore
     const userName = data.userName || "A farmer";
     const requestId = context.params.requestId;
 
-    const title = "New review request";
-    const body = `${userName} submitted a leaf scan for expert review.`;
+    const title = "New Review Request";
+    const body = `${userName} submitted a pig disease scan for expert review.`;
 
     // Broadcast to all expert devices via topic
     await messaging.send({
@@ -83,6 +134,21 @@ exports.notifyExpertsOnNewRequest = functions.firestore
         userName: String(userName || ""),
       },
     });
+
+    // Save notification to Firestore for all experts
+    const expertUserIds = await getAllExpertUserIds();
+    const notificationPromises = expertUserIds.map((expertId) =>
+      saveNotificationToFirestore(expertId, {
+        type: "scan_request_created",
+        title,
+        body,
+        data: {
+          requestId: String(requestId || ""),
+          userName: String(userName || ""),
+        },
+      })
+    );
+    await Promise.all(notificationPromises);
 
     // Mark as notified to prevent duplicates
     try {
@@ -117,8 +183,8 @@ exports.notifyExpertsOnPendingUpdate = functions.firestore
     const userName = after.userName || before.userName || "A farmer";
     const requestId = context.params.requestId;
 
-    const title = "New review request";
-    const body = `${userName} submitted a leaf scan for expert review.`;
+    const title = "New Review Request";
+    const body = `${userName} submitted a pig disease scan for expert review.`;
 
     await messaging.send({
       topic: "experts",
@@ -129,6 +195,21 @@ exports.notifyExpertsOnPendingUpdate = functions.firestore
         userName: String(userName || ""),
       },
     });
+
+    // Save notification to Firestore for all experts
+    const expertUserIds = await getAllExpertUserIds();
+    const notificationPromises = expertUserIds.map((expertId) =>
+      saveNotificationToFirestore(expertId, {
+        type: "scan_request_created",
+        title,
+        body,
+        data: {
+          requestId: String(requestId || ""),
+          userName: String(userName || ""),
+        },
+      })
+    );
+    await Promise.all(notificationPromises);
 
     // Mark as notified to prevent duplicates
     try {
@@ -174,7 +255,7 @@ exports.notifyUserOnReviewCompleted = functions.firestore
 
     const expertName = after.expertName || "An expert";
     const title = "Your review is ready";
-    const body = `${expertName} has completed the analysis of your leaf scan.`;
+    const body = `${expertName} has completed the analysis of your pig disease scan.`;
 
     const requestId = context.params.requestId;
 
@@ -191,6 +272,17 @@ exports.notifyUserOnReviewCompleted = functions.firestore
     };
 
     await sendToTokens([token], payload);
+
+    // Save notification to Firestore for the farmer
+    await saveNotificationToFirestore(userId, {
+      type: "scan_request_completed",
+      title,
+      body,
+      data: {
+        requestId: String(requestId || ""),
+        expertName: String(expertName || ""),
+      },
+    });
 
     // Mark as notified to prevent duplicates
     try {
@@ -228,14 +320,14 @@ exports.notifyUserOnApproval = functions.firestore
       return null;
     }
 
-    const subject = "🎉 Welcome to MangoSense - Your Account is Approved!";
+    const subject = "🎉 Welcome to OinkCheck - Your Account is Approved!";
     const htmlContent = `
       <!DOCTYPE html>
       <html>
       <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Account Approved - MangoSense</title>
+        <title>Account Approved - OinkCheck</title>
         <style>
           body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
           .container { max-width: 600px; margin: 0 auto; padding: 20px; }
@@ -248,34 +340,34 @@ exports.notifyUserOnApproval = functions.firestore
       <body>
         <div class="container">
           <div class="header">
-            <h1>🎉 Welcome to MangoSense!</h1>
+            <h1>🎉 Welcome to OinkCheck!</h1>
             <p>Your account has been approved and is now active</p>
           </div>
           <div class="content">
             <h2>Hello ${userName}!</h2>
-            <p>Great news! Your MangoSense account has been reviewed and approved by our team. You can now access all the features of our mango disease detection app.</p>
+            <p>Great news! Your OinkCheck account has been reviewed and approved by our team. You can now access all the features of our pig disease detection app.</p>
             
             <h3>What you can do now:</h3>
             <ul>
-              <li>🔍 Scan mango leaves for disease detection</li>
+              <li>🔍 Scan pigs for disease detection</li>
               <li>📊 View detailed analysis reports</li>
-              <li>👨‍🌾 Get expert recommendations for treatment</li>
+              <li>👨‍⚕️ Get expert recommendations for treatment</li>
               <li>📱 Access your scan history and progress</li>
             </ul>
             
-            <p>Simply log in to your account using the same credentials you used during registration to start using MangoSense.</p>
+            <p>Simply log in to your account using the same credentials you used during registration to start using OinkCheck.</p>
             
             <p><strong>Next Steps:</strong></p>
             <ul>
-              <li>Open the MangoSense app on your device</li>
+              <li>Open the OinkCheck app on your device</li>
               <li>Log in with your registered email and password</li>
-              <li>Start detecting mango diseases and getting expert advice</li>
+              <li>Start detecting pig diseases and getting expert advice</li>
             </ul>
             
             <p><strong>Need help?</strong> If you have any questions or need assistance, feel free to contact our support team.</p>
           </div>
           <div class="footer">
-            <p>Best regards,<br>The MangoSense Team</p>
+            <p>Best regards,<br>The OinkCheck Team</p>
             <p>This is an automated message. Please do not reply to this email.</p>
           </div>
         </div>
