@@ -4,9 +4,44 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
-    <!-- White-only small icon for notifications (transparent background) -->
+    <!-- White-only pig head icon for notifications (transparent background) -->
+    <!-- Head (rounded oval) -->
     <path
         android:fillColor="#FFFFFFFF"
-        android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.9,2 2,2zM18,16v-5c0,-3.07 -1.63,-5.64 -4.5,-6.32v-0.68c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-1.99,2c-0.01,0.01 -0.01,0.04 -0.01,0.06 0,0.55 0.45,0.99 1,0.99h14c0.55,0 1,-0.45 1,-1 0,-0.02 0,-0.04 -0.01,-0.06L18,16z"/>
+        android:pathData="M12,4C8.5,4 6,6.5 6,10c0,2 0.8,3.5 1.8,4.3v2.2c0,1.1 0.9,2 2,2h4.4c1.1,0 2,-0.9 2,-2v-2.2c1,-0.8 1.8,-2.3 1.8,-4.3c0,-3.5 -2.5,-6 -6,-6z"/>
+    <!-- Left ear (triangle) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,5L7,3L9,4L8,5z"/>
+    <!-- Right ear (triangle) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M16,5L17,3L15,4L16,5z"/>
+    <!-- Left eye (circle as path) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.5,9A1,1 0,0,1 10.5,9A1,1 0,0,1 8.5,9z"/>
+    <!-- Right eye (circle as path) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M13.5,9A1,1 0,0,1 15.5,9A1,1 0,0,1 13.5,9z"/>
+    <!-- Snout (horizontal oval) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10,12.5C10,13.3 10.7,14 11.5,14h1C13.3,14 14,13.3 14,12.5C14,11.7 13.3,11 12.5,11h-1C10.7,11 10,11.7 10,12.5z"/>
+    <!-- Left nostril (small circle as path) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M10.8,12.5A0.4,0.4 0,0,1 11.6,12.5A0.4,0.4 0,0,1 10.8,12.5z"/>
+    <!-- Right nostril (small circle as path) -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M12.4,12.5A0.4,0.4 0,0,1 13.2,12.5A0.4,0.4 0,0,1 12.4,12.5z"/>
+    <!-- Smile (curved line) -->
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.5"
+        android:strokeLineCap="round"
+        android:pathData="M9,15.5Q12,17 15,15.5"/>
 </vector>
 

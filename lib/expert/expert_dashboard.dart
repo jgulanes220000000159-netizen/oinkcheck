@@ -15,6 +15,7 @@ import '../shared/pig_disease_ui.dart';
 import 'expert_chat_inbox_page.dart';
 import '../head_veterinarian/vet_manage_treatments_page.dart';
 import 'expert_notifications_page.dart';
+import '../shared/notification_service.dart';
 
 class ExpertDashboard extends StatefulWidget {
   const ExpertDashboard({Key? key, this.treatmentsPageOverride})
@@ -32,8 +33,11 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
   int _selectedIndex = 0;
   int _requestsInitialTab = 0; // 0 for pending, 1 for completed
   int _pendingNotifications = 0; // Track pending notifications
+  int _unreadNotificationCount =
+      0; // Track unread notifications from notification service
   Set<String> _lastPendingIds = <String>{};
   StreamSubscription? _seenPendingWatch;
+  StreamSubscription? _notificationWatch;
 
   List<Widget> _pages = [];
   bool _isVet = false;
@@ -45,6 +49,26 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
     _updatePages();
     // Start live unseen pending subscription; do not preload stale counts
     _subscribePendingUnseen();
+    _subscribeToNotifications();
+  }
+
+  @override
+  void dispose() {
+    _notificationWatch?.cancel();
+    _seenPendingWatch?.cancel();
+    super.dispose();
+  }
+
+  void _subscribeToNotifications() {
+    // Subscribe to unread notification count
+    NotificationService.watchNotifications().listen((notifications) {
+      if (mounted) {
+        final unreadCount = notifications.where((n) => !n.isRead).length;
+        setState(() {
+          _unreadNotificationCount = unreadCount;
+        });
+      }
+    });
   }
 
   Future<void> _loadRoleAndUpdatePages() async {
@@ -407,7 +431,7 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
                               color: Colors.green,
                               size: 24,
                             ),
-                            if (_pendingNotifications > 0)
+                            if (_unreadNotificationCount > 0)
                               Positioned(
                                 right: -4,
                                 top: -4,
@@ -422,9 +446,9 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
                                     minHeight: 18,
                                   ),
                                   child: Text(
-                                    _pendingNotifications > 9
+                                    _unreadNotificationCount > 9
                                         ? '9+'
-                                        : '$_pendingNotifications',
+                                        : '$_unreadNotificationCount',
                                     style: const TextStyle(
                                       color: Colors.white,
                                       fontSize: 10,

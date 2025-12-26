@@ -15,6 +15,22 @@ class ScanPage extends StatefulWidget {
 }
 
 class _ScanPageState extends State<ScanPage> {
+  Widget _buildTipItem(IconData icon, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: Colors.green[700]),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: const TextStyle(fontSize: 14),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildProcessingIndicator() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -177,6 +193,71 @@ class _ScanPageState extends State<ScanPage> {
         // Close loading dialog smoothly
         Navigator.pop(context);
         print('DEBUG: Dialog closed smoothly');
+
+        // Check if no diseases were detected
+        final hasAnyDetections = allResults.values.any((results) => results.isNotEmpty);
+        
+        if (!hasAnyDetections) {
+          // Show dialog with retake guidance
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: Row(
+                children: [
+                  Icon(Icons.info_outline, color: Colors.orange[700], size: 28),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'No Disease Detected',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'No diseases were detected in the scanned images. Please try retaking the photos with the following tips:',
+                    style: TextStyle(fontSize: 15),
+                  ),
+                  const SizedBox(height: 16),
+                  _buildTipItem(Icons.camera_alt, 'Ensure good lighting - natural daylight is best'),
+                  const SizedBox(height: 8),
+                  _buildTipItem(Icons.aspect_ratio, 'Keep the pig in focus and fill most of the frame'),
+                  const SizedBox(height: 8),
+                  _buildTipItem(Icons.straighten, 'Maintain a distance of 10cm to 100cm from the subject'),
+                  const SizedBox(height: 8),
+                  _buildTipItem(Icons.visibility, 'Make sure the affected area is clearly visible'),
+                  const SizedBox(height: 8),
+                  _buildTipItem(Icons.image, 'Avoid blurry or dark images'),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text(
+                    'OK',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.green,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+          return; // Don't navigate to summary if no detections
+        }
 
         // Navigate directly to analysis summary
         Navigator.push(

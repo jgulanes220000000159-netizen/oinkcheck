@@ -1538,9 +1538,10 @@ class _UserRequestDetailState extends State<UserRequestDetail> {
                         final isUnknown = PigDiseaseUI.normalizeKey(label) == 'unknown';
                         // If this report is completed, it was expert-validated already,
                         // so always allow recommendations (except for healthy/unknown).
+                        // Otherwise, show recommendations if ANY detection (maxConfidence) is >= 70%
                         final canShowRecommendation = !isHealthy &&
                             !isUnknown &&
-                            (isCompleted || avg >= _recommendationAvgThreshold);
+                            (isCompleted || mx >= _recommendationAvgThreshold);
                         return Card(
                           margin: const EdgeInsets.only(bottom: 12),
                           child: Padding(

@@ -23,6 +23,8 @@ import 'tracking_page.dart';
 import 'tracking_models.dart';
 import 'diseases_page.dart';
 import 'disease_map_page.dart';
+import '../shared/notifications_page.dart';
+import '../shared/notification_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -50,7 +52,9 @@ class _HomePageState extends State<HomePage> {
   // Live subscription for request counts
   StreamSubscription<QuerySnapshot>? _requestCountsSub;
   StreamSubscription? _seenBoxSub;
+  StreamSubscription? _notificationWatch;
   int _unseenCompleted = 0;
+  int _unreadNotificationCount = 0;
   Set<String> _lastCompletedIds = <String>{};
 
   // Cache request counts to Hive for offline access
@@ -131,6 +135,9 @@ class _HomePageState extends State<HomePage> {
     _loadDiseaseInfo();
     _loadRequestCounts();
     _subscribeToRequestCounts();
+    _subscribeToNotifications();
+    // Also refresh count on init
+    _refreshNotificationCount();
     _pages = [
       Container(),
       const ScanPage(),
@@ -138,6 +145,40 @@ class _HomePageState extends State<HomePage> {
       const DiseaseMapPage(),
       const DiseasesPage(),
     ];
+  }
+
+  void _subscribeToNotifications() {
+    // Subscribe to unread notification count
+    _notificationWatch?.cancel();
+    _notificationWatch = NotificationService.watchNotifications().listen(
+      (notifications) {
+        if (mounted) {
+          final unreadCount = notifications.where((n) => !n.isRead).length;
+          setState(() {
+            _unreadNotificationCount = unreadCount;
+          });
+        }
+      },
+      onError: (error) {
+        print('Error in notification stream: $error');
+        // Fallback: manually refresh count
+        _refreshNotificationCount();
+      },
+    );
+  }
+
+  Future<void> _refreshNotificationCount() async {
+    try {
+      final notifications = await NotificationService.getNotifications();
+      if (mounted) {
+        final unreadCount = notifications.where((n) => !n.isRead).length;
+        setState(() {
+          _unreadNotificationCount = unreadCount;
+        });
+      }
+    } catch (e) {
+      print('Error refreshing notification count: $e');
+    }
   }
 
   void _subscribeToRequestCounts() async {
@@ -227,6 +268,7 @@ class _HomePageState extends State<HomePage> {
   void dispose() {
     _requestCountsSub?.cancel();
     _seenBoxSub?.cancel();
+    _notificationWatch?.cancel();
     super.dispose();
   }
 
@@ -389,6 +431,17 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       print('Error fetching disease info: $e');
     }
+  }
+
+  Widget _buildTipItem(IconData icon, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: Colors.green[700]),
+        const SizedBox(width: 12),
+        Expanded(child: Text(text, style: const TextStyle(fontSize: 14))),
+      ],
+    );
   }
 
   Widget _buildQuickActionButtons() {
@@ -766,6 +819,90 @@ class _HomePageState extends State<HomePage> {
         if (mounted) {
           Navigator.pop(context);
           print('DEBUG: Dialog closed smoothly');
+        }
+
+        // Check if no diseases were detected
+        final hasAnyDetections = allResults.values.any(
+          (results) => results.isNotEmpty,
+        );
+
+        if (!hasAnyDetections && mounted) {
+          // Show dialog with retake guidance
+          await showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder:
+                (context) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  title: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        color: Colors.orange[700],
+                        size: 28,
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'No Disease Detected',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  content: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'No diseases were detected in the scanned images. Please try retaking the photos with the following tips:',
+                        style: TextStyle(fontSize: 15),
+                      ),
+                      const SizedBox(height: 16),
+                      _buildTipItem(
+                        Icons.camera_alt,
+                        'Ensure good lighting - natural daylight is best',
+                      ),
+                      const SizedBox(height: 8),
+                      _buildTipItem(
+                        Icons.aspect_ratio,
+                        'Keep the pig in focus and fill most of the frame',
+                      ),
+                      const SizedBox(height: 8),
+                      _buildTipItem(
+                        Icons.straighten,
+                        'Maintain a distance of 10cm to 100cm from the subject',
+                      ),
+                      const SizedBox(height: 8),
+                      _buildTipItem(
+                        Icons.visibility,
+                        'Make sure the affected area is clearly visible',
+                      ),
+                      const SizedBox(height: 8),
+                      _buildTipItem(Icons.image, 'Avoid blurry or dark images'),
+                    ],
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        'OK',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.green,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+          );
+          return; // Don't navigate to summary if no detections
         }
 
         // Navigate directly to analysis summary
@@ -1940,7 +2077,7 @@ class _HomePageState extends State<HomePage> {
                                 size: 28,
                                 color: Colors.green,
                               ),
-                              if (_unseenCompleted > 0)
+                              if (_unreadNotificationCount > 0)
                                 Positioned(
                                   right: -2,
                                   top: -2,
@@ -1960,9 +2097,9 @@ class _HomePageState extends State<HomePage> {
                                     ),
                                     child: Center(
                                       child: Text(
-                                        _unseenCompleted > 9
+                                        _unreadNotificationCount > 9
                                             ? '9+'
-                                            : '$_unseenCompleted',
+                                            : '$_unreadNotificationCount',
                                         style: const TextStyle(
                                           color: Colors.white,
                                           fontSize: 10,
@@ -1975,14 +2112,18 @@ class _HomePageState extends State<HomePage> {
                                 ),
                             ],
                           ),
-                          onPressed: () {
-                            // TODO: Navigate to notifications page
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Notifications coming soon!'),
-                                duration: Duration(seconds: 1),
+                          onPressed: () async {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder:
+                                    (context) => const NotificationsPage(
+                                      userRole: 'farmer',
+                                    ),
                               ),
                             );
+                            // Refresh notification count when returning from notifications page
+                            _refreshNotificationCount();
                           },
                         ),
                       ],

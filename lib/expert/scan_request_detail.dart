@@ -610,7 +610,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
 
       final requestUpdate = <String, dynamic>{
         'status': isDisagree ? 'pending_review' : 'completed',
-        'expertReview': expertReview,
+            'expertReview': expertReview,
         'reviewedAt': nowIso,
         if (_editedDiseaseSummary != null)
           'expertDiseaseSummary': _normalizeAndMergeSummary(_editedDiseaseSummary!),
@@ -631,9 +631,9 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
         // If disagree: keep unassigned so other experts can pick it up + notifications show for everyone
         if (isDisagree) 'expertName': FieldValue.delete(),
         if (isDisagree) 'expertUid': FieldValue.delete(),
-        'reviewingBy': FieldValue.delete(),
-        'reviewingByUid': FieldValue.delete(),
-        'reviewingAt': FieldValue.delete(),
+            'reviewingBy': FieldValue.delete(),
+            'reviewingByUid': FieldValue.delete(),
+            'reviewingAt': FieldValue.delete(),
       };
 
       await FirebaseFirestore.instance.collection('scan_requests').doc(docId).update(requestUpdate);
@@ -1335,8 +1335,8 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
             const Expanded(
               child: Text(
                 'Report Results',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
+          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        ),
             ),
             if (!isCompleted || canEditAfterCompletion)
               OutlinedButton.icon(
@@ -1590,7 +1590,7 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                 ),
                 const SizedBox(height: 10),
                 Row(
-                  children: [
+              children: [
                     Expanded(
                       child: ElevatedButton.icon(
                         onPressed: _isSubmitting
@@ -1626,10 +1626,10 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                         ),
                         icon: const Icon(Icons.cancel_outlined),
                         label: const Text('Disagree'),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
+              ],
+            ),
                 const SizedBox(height: 14),
                 const Text(
                   'Comment (optional)',
@@ -1774,10 +1774,10 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
                     style: const TextStyle(fontSize: 15, color: Colors.black87),
                   ),
                 ],
-              ],
+                ],
+              ),
             ),
           ),
-        ),
       ],
     );
   }
