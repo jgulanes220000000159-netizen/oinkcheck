@@ -495,7 +495,6 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
   DateTime? _customEndDate;
   int? _monthlyYear;
   int? _monthlyMonth;
-  int? _lastStreamDocsCount;
 
   // Filter reviews according to the selected range
   // ignore: unused_element
@@ -1736,22 +1735,15 @@ class _ExpertHomePageState extends State<ExpertHomePage> {
               )
               .snapshots(),
       builder: (context, snapshot) {
-        // Update stats when stream data changes (prevent tight loop)
+        // Update stats when stream data changes (real-time updates)
         if (snapshot.hasData) {
-          // Only update when the doc count changes; prevents constant re-calls
-          final currentCount = snapshot.data!.docs.length;
-          if (_lastStreamDocsCount != currentCount) {
-            _lastStreamDocsCount = currentCount;
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _updateStatsFromStream(snapshot.data!.docs);
-            });
-          }
+          // Update on any document change (status, expertDiseaseSummary, etc.)
+          // This ensures status changes are reflected immediately in Recent Reports table
+          _updateStatsFromStream(snapshot.data!.docs);
         } else if (snapshot.hasError) {
           // Handle stream errors by setting offline mode
           if (!_isOffline) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              setState(() => _isOffline = true);
-            });
+            setState(() => _isOffline = true);
           }
         }
 
