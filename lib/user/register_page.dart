@@ -295,7 +295,7 @@ class _RegisterPageState extends State<RegisterPage> {
           'phoneNumber': _phoneController.text.trim(),
           'email': _emailController.text.trim(),
           'role': 'farmer',
-          'status': 'pending',
+          'status': 'active',
           'imageProfile': '',
           'createdAt': DateTime.now(),
         });
@@ -367,7 +367,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ],
             ),
             content: Text(
-              'Account created successfully! Your account is now pending admin approval. You will receive an email notification once your account is approved. Please use the login page to check your account status.',
+              'Account created successfully! You can now log in to start using OinkCheck.',
               style: TextStyle(fontSize: 16),
             ),
             actions: [

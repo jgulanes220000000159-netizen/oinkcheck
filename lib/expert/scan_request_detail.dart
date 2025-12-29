@@ -608,23 +608,36 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
       // If AGREE: complete normally.
       final nowIso = DateTime.now().toIso8601String();
 
+      // ALWAYS save expertDiseaseSummary (even if no edits made)
+      // Use edited summary if available, otherwise use original diseaseSummary
+      final summaryToSave = _editedDiseaseSummary != null
+          ? _normalizeAndMergeSummary(_editedDiseaseSummary!)
+          : ((widget.request['diseaseSummary'] as List?) ?? const [])
+              .whereType<Map>()
+              .map((e) => Map<String, dynamic>.from(e))
+              .toList();
+      
+      final normalizedSummary = _normalizeAndMergeSummary(summaryToSave);
+      final changeLog = _editedDiseaseSummary != null
+          ? ReportResultChangeLog.build(
+              before: _lastSavedSummaryForDiff,
+              after: normalizedSummary,
+              byUid: user.uid,
+              byName: expertName.toString(),
+              source: isDisagree ? 'expert_review_to_discussion' : 'expert_review',
+            )
+          : null; // No change log if expert just agreed without edits
+
       final requestUpdate = <String, dynamic>{
         'status': isDisagree ? 'pending_review' : 'completed',
-            'expertReview': expertReview,
+        'expertReview': expertReview,
         'reviewedAt': nowIso,
-        if (_editedDiseaseSummary != null)
-          'expertDiseaseSummary': _normalizeAndMergeSummary(_editedDiseaseSummary!),
-        if (_editedDiseaseSummary != null) 'expertDiseaseSummaryUpdatedAt': nowIso,
-        if (_editedDiseaseSummary != null) 'expertDiseaseSummaryByUid': user.uid,
-        if (_editedDiseaseSummary != null) 'expertDiseaseSummaryByName': expertName,
-        if (_editedDiseaseSummary != null)
-          'expertDiseaseSummaryChangeLog': ReportResultChangeLog.build(
-            before: _lastSavedSummaryForDiff,
-            after: _normalizeAndMergeSummary(_editedDiseaseSummary!),
-            byUid: user.uid,
-            byName: expertName.toString(),
-            source: isDisagree ? 'expert_review_to_discussion' : 'expert_review',
-          ),
+        // ALWAYS save expertDiseaseSummary (for admin data collection)
+        'expertDiseaseSummary': normalizedSummary,
+        'expertDiseaseSummaryUpdatedAt': nowIso,
+        'expertDiseaseSummaryByUid': user.uid,
+        'expertDiseaseSummaryByName': expertName,
+        if (changeLog != null) 'expertDiseaseSummaryChangeLog': changeLog,
         // Only set "final" expert fields on AGREE
         if (!isDisagree) 'expertName': expertName,
         if (!isDisagree) 'expertUid': user.uid,
@@ -702,8 +715,8 @@ class _ScanRequestDetailState extends State<ScanRequestDetail> {
           'status': _selectedDecision == 'disagree' ? 'pending_review' : 'completed',
           'expertReview': expertReview,
           'reviewedAt': DateTime.now().toIso8601String(),
-          if (_editedDiseaseSummary != null)
-            'expertDiseaseSummary': _normalizeAndMergeSummary(_editedDiseaseSummary!),
+          // ALWAYS include expertDiseaseSummary in navigation result
+          'expertDiseaseSummary': normalizedSummary,
         });
       }
     } catch (e) {

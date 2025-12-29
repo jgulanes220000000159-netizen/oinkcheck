@@ -778,11 +778,26 @@ class _ExpertChatThreadPageState extends State<ExpertChatThreadPage> {
     const nextStatus = 'completed';
     final nowIso = DateTime.now().toIso8601String();
 
+    // Get current summary (prefer expertDiseaseSummary, fallback to diseaseSummary)
+    final reqSnap = await reqRef.get();
+    final reqData = reqSnap.data() ?? <String, dynamic>{};
+    final currentSummary = (reqData['expertDiseaseSummary'] as List?) ??
+        (reqData['diseaseSummary'] as List?) ??
+        const [];
+    final normalizedSummary = _normalizeAndMergeSummary(
+      currentSummary.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList(),
+    );
+
     batch.update(reqRef, {
       'status': nextStatus,
       'reviewedAt': nowIso,
       'expertName': widget.myName,
       'expertUid': uid,
+      // ALWAYS save expertDiseaseSummary (for admin data collection)
+      'expertDiseaseSummary': normalizedSummary,
+      'expertDiseaseSummaryUpdatedAt': nowIso,
+      'expertDiseaseSummaryByUid': uid,
+      'expertDiseaseSummaryByName': widget.myName,
       'expertReview': {
         'decision': decision,
         'comment': comment.trim(),
