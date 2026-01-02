@@ -523,7 +523,12 @@ class _ScanPageState extends State<ScanPage> {
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
-                            Icon(Icons.eco, size: 60, color: Colors.green[700]),
+                            Image.asset(
+                              'assets/applogo.png',
+                              width: 60,
+                              height: 60,
+                              fit: BoxFit.contain,
+                            ),
                             // Scanning corner indicators
                             Positioned(
                               top: 0,
