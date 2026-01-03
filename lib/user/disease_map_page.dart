@@ -3,6 +3,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import '../shared/pig_disease_ui.dart';
 import '../shared/geocoding_service.dart';
 
@@ -15,7 +16,8 @@ class DiseaseMapPage extends StatefulWidget {
 
 class _DiseaseMapPageState extends State<DiseaseMapPage> {
   final MapController _mapController = MapController();
-  List<Marker> _markers = [];
+  List<CircleMarker> _heatmapCircles = [];
+  List<Marker> _invisibleMarkers = []; // For click interaction
   String? _selectedDisease;
 
   // Use model label keys for filtering/colors (exclude healthy/unknown).
@@ -203,7 +205,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
         agg[key]!.count++;
       }
 
-      // Geocode CITY centroid (best-effort, cached) so pins sit at city center,
+      // Geocode CITY centroid (best-effort, cached) so heatmap circles sit at city center,
       // independent of individual farmer lat/lng.
       for (final a in agg.values) {
         if (a.province.trim().isEmpty || a.city.trim().isEmpty) continue;
@@ -217,20 +219,93 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
         }
       }
 
-      final markers = <Marker>[];
+      // Create heatmap circles with gradient layers
+      final heatmapCircles = <CircleMarker>[];
+      final invisibleMarkers = <Marker>[]; // For click interaction
+
       for (final a in agg.values) {
         if (a.lat == null || a.lng == null) continue;
         final count = a.count;
-        final severityColor = _severityColor(count);
+        if (count <= 0) continue;
 
-        // Simple visual rule: Pin color = severity (mild/moderate/severe)
-        // Pin size = case volume (count)
-        final double pinSize = (32 + (count * 4)).clamp(32, 56).toDouble();
-        markers.add(
+        // Calculate intensity based on thresholds (50+/25-49/0-24)
+        double intensity; // 0.0 to 1.0 for color gradient
+
+        if (count < 25) {
+          // Low: 0-24 cases
+          // Normalize within low range: 0 cases = 0.0, 24 cases = 0.33
+          intensity = (count / 24.0) * 0.33;
+        } else if (count < 50) {
+          // Medium: 25-49 cases
+          // Normalize within medium range: 25 cases = 0.33, 49 cases = 0.67
+          intensity = 0.33 + ((count - 25) / 24.0) * 0.34;
+        } else {
+          // High: 50+ cases
+          // Normalize within high range: 50 cases = 0.67, scale up for higher counts
+          final excess = count - 50;
+          intensity = 0.67 + (math.min(excess / 50.0, 1.0) * 0.33);
+        }
+
+        // Calculate circle size based on count category
+        double radius;
+        if (count < 25) {
+          // Low: 500m to 1.5km
+          radius = 500.0 + ((count / 24.0) * 1000.0);
+        } else if (count < 50) {
+          // Medium: 1.5km to 3km
+          radius = 1500.0 + (((count - 25) / 24.0) * 1500.0);
+        } else {
+          // High: 3km to 5km (capped)
+          final excess = count - 50;
+          radius = 3000.0 + (math.min(excess / 50.0, 1.0) * 2000.0);
+        }
+
+        // Get heatmap color based on intensity
+        final heatmapColor = _getHeatmapColor(intensity);
+
+        // Create smooth gradient heatmap effect using multiple overlapping circles
+        // This simulates Kernel Density Estimation (KDE) for a smooth gradient
+        const int numLayers = 5; // Layers for smoother gradient
+        for (int i = 0; i < numLayers; i++) {
+          // Each layer extends further with decreasing opacity
+          final layerRadius = radius * (1.0 + (i * 0.2));
+          // Opacity decreases exponentially for smooth falloff
+          final layerOpacity = 0.6 * math.exp(-i * 0.4);
+
+          if (layerRadius > 50 && layerOpacity > 0.05) {
+            // Add gradient layers (semi-transparent for blending)
+            heatmapCircles.add(
+              CircleMarker(
+                point: LatLng(a.lat!, a.lng!),
+                radius: layerRadius,
+                color: heatmapColor.withOpacity(layerOpacity),
+                borderColor: Colors.transparent,
+                borderStrokeWidth: 0,
+                useRadiusInMeter: true,
+              ),
+            );
+          }
+        }
+
+        // Add a solid center circle for the core intensity point
+        // This creates the "hotspot" effect with white outline
+        heatmapCircles.add(
+          CircleMarker(
+            point: LatLng(a.lat!, a.lng!),
+            radius: radius * 0.15, // Smaller solid center
+            color: heatmapColor, // Solid color (no opacity)
+            borderColor: Colors.white.withOpacity(0.9), // White outline
+            borderStrokeWidth: 2.0, // Visible outline
+            useRadiusInMeter: true,
+          ),
+        );
+
+        // Create invisible marker for click interaction
+        invisibleMarkers.add(
           Marker(
             point: LatLng(a.lat!, a.lng!),
-            width: pinSize,
-            height: pinSize,
+            width: 40,
+            height: 40,
             child: GestureDetector(
               onTap: () {
                 _showMarkerInfo(
@@ -241,10 +316,10 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                   province: a.province,
                 );
               },
-              child: Icon(
-                Icons.location_pin,
-                color: severityColor,
-                size: pinSize,
+              child: Container(
+                color: Colors.transparent,
+                width: 40,
+                height: 40,
               ),
             ),
           ),
@@ -252,10 +327,11 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
       }
 
       print(
-        '✅ Disease Map: Created ${markers.length} markers from validated reports',
+        '✅ Disease Map: Created ${heatmapCircles.length} heatmap circles from validated reports',
       );
       setState(() {
-        _markers = markers;
+        _heatmapCircles = heatmapCircles;
+        _invisibleMarkers = invisibleMarkers;
         _isLoading = false;
       });
     } catch (e) {
@@ -293,15 +369,48 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
   }
 
   String _getSeverityLabel(int count) {
-    if (count >= 5) return 'Severe';
-    if (count >= 3) return 'Moderate';
-    return 'Mild';
+    if (count >= 50) return 'High';
+    if (count >= 25) return 'Medium';
+    return 'Low';
   }
 
-  Color _severityColor(int count) {
-    if (count >= 5) return Colors.red;
-    if (count >= 3) return Colors.orange;
-    return Colors.green;
+  /// Get heatmap color based on intensity (0.0 to 1.0)
+  /// Returns gradient from green (low) -> yellow (medium) -> red (high)
+  /// Thresholds: Low (0-24), Medium (25-49), High (50+)
+  Color _getHeatmapColor(double intensity) {
+    if (intensity <= 0.0) return const Color(0xFF4CAF50); // Green
+    if (intensity >= 1.0) return const Color(0xFFF44336); // Red
+
+    // Define thresholds for Low/Medium/High
+    const lowThreshold = 0.33; // 0.0 to 0.33 = Low (Green)
+    const mediumThreshold = 0.67; // 0.33 to 0.67 = Medium (Yellow)
+    // 0.67 to 1.0 = High (Red)
+
+    if (intensity < lowThreshold) {
+      // Low: Green to Light Green (0.0 to 0.33)
+      final t = intensity / lowThreshold; // Scale to 0.0-1.0
+      return Color.lerp(
+        const Color(0xFF4CAF50), // Green
+        const Color(0xFF8BC34A), // Light Green
+        t,
+      )!;
+    } else if (intensity < mediumThreshold) {
+      // Medium: Light Green to Yellow (0.33 to 0.67)
+      final t = (intensity - lowThreshold) / (mediumThreshold - lowThreshold); // Scale to 0.0-1.0
+      return Color.lerp(
+        const Color(0xFF8BC34A), // Light Green
+        const Color(0xFFFFEB3B), // Yellow
+        t,
+      )!;
+    } else {
+      // High: Yellow to Red (0.67 to 1.0)
+      final t = (intensity - mediumThreshold) / (1.0 - mediumThreshold); // Scale to 0.0-1.0
+      return Color.lerp(
+        const Color(0xFFFFEB3B), // Yellow
+        const Color(0xFFF44336), // Red
+        t,
+      )!;
+    }
   }
 
   @override
@@ -320,7 +429,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // Legend (non-confusing):
-                        // Pin color = severity (mild/moderate/severe)
+                        // Pin color = severity (low/medium/high)
                         Row(
                           children: [
                             Expanded(
@@ -328,9 +437,9 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceEvenly,
                                 children: [
-                                  _buildLegendItem(Colors.green, 'Mild'),
-                                  _buildLegendItem(Colors.orange, 'Moderate'),
-                                  _buildLegendItem(Colors.red, 'Severe'),
+                                  _buildLegendItem(Colors.green, 'Low'),
+                                  _buildLegendItem(Colors.orange, 'Medium'),
+                                  _buildLegendItem(Colors.red, 'High'),
                                 ],
                               ),
                             ),
@@ -341,7 +450,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                           children: [
                             Expanded(
                               child: Text(
-                                'Pin color = Severity • Pin size = Number of completed reports',
+                                'Heatmap intensity = Number of completed reports • Thresholds: Low (0-24) | Medium (25-49) | High (50+)',
                                 style: TextStyle(
                                   color: Colors.grey[700],
                                   fontSize: 12,
@@ -433,7 +542,8 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                               'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                           userAgentPackageName: 'com.example.capstone',
                         ),
-                        MarkerLayer(markers: _markers),
+                        CircleLayer(circles: _heatmapCircles),
+                        MarkerLayer(markers: _invisibleMarkers),
                       ],
                     ),
                   ),
