@@ -8,6 +8,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:589848547166:android:bddcecebe475e4cab2c9cf",
+        "android_client_info": {
+          "package_name": "com.app.oinkheck"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDItyYxyCnqmUZQ5dD-NO2bVhoUNFSBQVE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:589848547166:android:a3c02aaead8bfe26b2c9cf",
         "android_client_info": {
           "package_name": "com.example.capstone"
@@ -30,6 +49,25 @@
         "mobilesdk_app_id": "1:589848547166:android:678df6ebf076ebffb2c9cf",
         "android_client_info": {
           "package_name": "com.example.oinkcheck"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDItyYxyCnqmUZQ5dD-NO2bVhoUNFSBQVE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:589848547166:android:848279ece7b8a830b2c9cf",
+        "android_client_info": {
+          "package_name": "com.uiccapstone.oinkcheck"
         }
       },
       "oauth_client": [],

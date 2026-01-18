@@ -2,8 +2,6 @@
 
     <!-- Camera permission -->
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
@@ -25,7 +23,7 @@
                 <!--Notif test area-->
         
         <activity
-            android:name=".MainActivity"
+            android:name="com.uiccapstone.oinkcheck.MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""
