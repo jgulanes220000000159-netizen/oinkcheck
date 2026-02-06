@@ -14,6 +14,7 @@ dependencies:
   camera: ^0.10.5+5
   tflite_flutter: ^0.10.1
   path_provider: ^2.1.1
+  geolocator: ^12.0.0
   image_picker: ^0.8.5+3 # Optional: if you want to pick images from the gallery
   image: ^3.0.1
   cupertino_icons: ^1.0.8 # For iOS style icons
@@ -25,6 +26,7 @@ dependencies:
   firebase_auth: ^4.17.4
   cloud_firestore: ^4.15.4
   firebase_storage: ^11.6.5
+  cloud_functions: ^4.7.3
   mime: ^1.0.5
   supabase_flutter: ^2.5.8
   cached_network_image: ^3.3.1

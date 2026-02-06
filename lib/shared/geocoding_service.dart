@@ -112,6 +112,65 @@ class GeocodingService {
       return null;
     }
   }
+
+  /// Reverse geocode a lat/lng to an approximate City/Municipality name using
+  /// OpenStreetMap Nominatim.
+  ///
+  /// Notes:
+  /// - Best-effort: may return null if network fails or data is unexpected.
+  /// - Cached locally (Hive) to reduce calls.
+  Future<String?> reverseCityMunicipality({
+    required double lat,
+    required double lng,
+  }) async {
+    // Cache by rounding coordinates ~11m precision (4 decimals) to avoid spamming.
+    final key = 'revCity|${lat.toStringAsFixed(4)}|${lng.toStringAsFixed(4)}';
+    final box = await Hive.openBox(_boxName);
+    final cached = box.get(key);
+    if (cached is String && cached.trim().isNotEmpty) return cached;
+
+    final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
+      'format': 'jsonv2',
+      'lat': lat.toString(),
+      'lon': lng.toString(),
+      'addressdetails': '1',
+      // zoom=10 tends to give city/municipality-level results
+      'zoom': '10',
+    });
+
+    try {
+      final resp = await http.get(
+        uri,
+        headers: const {
+          'User-Agent': 'OinkCheck/1.0 (reverse-city)',
+        },
+      ).timeout(const Duration(seconds: 6));
+
+      if (resp.statusCode != 200) return null;
+      final data = jsonDecode(resp.body);
+      if (data is! Map<String, dynamic>) return null;
+
+      final address = data['address'];
+      if (address is! Map) return null;
+      final a = Map<String, dynamic>.from(address);
+
+      // Nominatim can use different keys depending on place type.
+      final city =
+          (a['city'] ??
+                  a['town'] ??
+                  a['municipality'] ??
+                  a['county'] ??
+                  a['city_district'])
+              ?.toString()
+              .trim();
+
+      if (city == null || city.isEmpty) return null;
+      await box.put(key, city);
+      return city;
+    } catch (_) {
+      return null;
+    }
+  }
 }
 
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'home_page.dart';
 import 'register_page.dart';
+import 'password_reset_selection_page.dart';
 import '../expert/expert_dashboard.dart';
 import '../about_app_page.dart';
 import '../head_veterinarian/veterinarian_dashboard.dart';
@@ -737,171 +738,12 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _showForgotPasswordDialog(BuildContext context) {
-    final TextEditingController emailController = TextEditingController();
-    final ValueNotifier<String?> errorNotifier = ValueNotifier<String?>(null);
-    final ValueNotifier<bool> isLoadingNotifier = ValueNotifier<bool>(false);
-
-    showDialog(
-      context: context,
-      builder:
-          (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Reset Password',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Enter your email address and we\'ll send you a link to reset your password.',
-                    style: TextStyle(fontSize: 14, color: Colors.grey),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'Email Address',
-                      prefixIcon: Icon(Icons.email),
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ValueListenableBuilder<String?>(
-                    valueListenable: errorNotifier,
-                    builder:
-                        (context, error, child) =>
-                            error == null
-                                ? const SizedBox.shrink()
-                                : Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Text(
-                                    error,
-                                    style: const TextStyle(color: Colors.red),
-                                  ),
-                                ),
-                  ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ValueListenableBuilder<bool>(
-                      valueListenable: isLoadingNotifier,
-                      builder:
-                          (context, isLoading, child) => ElevatedButton(
-                            onPressed:
-                                isLoading
-                                    ? null
-                                    : () async {
-                                      final email = emailController.text.trim();
-
-                                      if (email.isEmpty) {
-                                        errorNotifier.value =
-                                            'Please enter your email address.';
-                                        return;
-                                      }
-
-                                      if (!RegExp(
-                                        r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                                      ).hasMatch(email)) {
-                                        errorNotifier.value =
-                                            'Please enter a valid email address.';
-                                        return;
-                                      }
-
-                                      isLoadingNotifier.value = true;
-                                      errorNotifier.value = null;
-
-                                      try {
-                                        await FirebaseAuth.instance
-                                            .sendPasswordResetEmail(
-                                              email: email,
-                                            );
-
-                                        Navigator.pop(context);
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              'Password reset link sent to $email',
-                                            ),
-                                            backgroundColor: Colors.green,
-                                          ),
-                                        );
-                                      } on FirebaseAuthException catch (e) {
-                                        String errorMessage =
-                                            'An error occurred while sending reset email.';
-                                        if (e.code == 'user-not-found') {
-                                          errorMessage =
-                                              'No account found with this email address.';
-                                        } else if (e.code == 'invalid-email') {
-                                          errorMessage =
-                                              'Please enter a valid email address.';
-                                        } else if (e.code ==
-                                            'too-many-requests') {
-                                          errorMessage =
-                                              'Too many requests. Please try again later.';
-                                        }
-                                        errorNotifier.value = errorMessage;
-                                      } catch (e) {
-                                        errorNotifier.value =
-                                            'An unexpected error occurred.';
-                                      } finally {
-                                        isLoadingNotifier.value = false;
-                                      }
-                                    },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green,
-                              padding: const EdgeInsets.symmetric(vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child:
-                                isLoading
-                                    ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.white,
-                                            ),
-                                      ),
-                                    )
-                                    : const Text(
-                                      'Send Reset Link',
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                          ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+    // Navigate to password reset selection page
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const PasswordResetSelectionPage(),
+      ),
     );
   }
 }

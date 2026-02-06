@@ -403,3 +403,156 @@ exports.notifyUserOnApproval = functions.firestore
 
     return null;
   });
+
+// ============================================
+// Password Reset Functions (OTP via SMS)
+// ============================================
+
+const twilio = require('twilio');
+
+// Initialize Twilio client (lazy initialization)
+let twilioClient = null;
+
+function getTwilioClient() {
+  if (!twilioClient) {
+    const accountSid = functions.config().twilio?.account_sid;
+    const authToken = functions.config().twilio?.auth_token;
+    
+    if (!accountSid || !authToken) {
+      throw new Error('Twilio credentials not configured. Set firebase functions:config:set twilio.account_sid and twilio.auth_token');
+    }
+    
+    twilioClient = twilio(accountSid, authToken);
+  }
+  return twilioClient;
+}
+
+/**
+ * Send password reset OTP via SMS (Twilio)
+ * 
+ * Usage from Flutter:
+ * final callable = FirebaseFunctions.instance.httpsCallable('sendPasswordResetOTP');
+ * await callable.call({'phoneNumber': '+639123456789', 'otp': '123456'});
+ */
+exports.sendPasswordResetOTP = functions.https.onCall(async (data, context) => {
+  const { phoneNumber, otp } = data;
+
+  if (!phoneNumber || !otp) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'phoneNumber and otp are required'
+    );
+  }
+
+  // Format phone number (ensure it starts with +)
+  let formattedPhone = phoneNumber.trim();
+  if (!formattedPhone.startsWith('+')) {
+    // Assume Philippines if no country code
+    formattedPhone = `+63${formattedPhone.replace(/^0/, '')}`;
+  }
+
+  try {
+    const client = getTwilioClient();
+    const twilioPhoneNumber = functions.config().twilio?.phone_number;
+    
+    if (!twilioPhoneNumber) {
+      throw new Error('Twilio phone number not configured. Set firebase functions:config:set twilio.phone_number');
+    }
+
+    // Send SMS via Twilio
+    const message = await client.messages.create({
+      body: `Your OinkCheck password reset code is: ${otp}. This code expires in 10 minutes.`,
+      from: twilioPhoneNumber,
+      to: formattedPhone,
+    });
+
+    console.log(`OTP sent to ${formattedPhone}: ${message.sid}`);
+    return { success: true, messageSid: message.sid };
+  } catch (error) {
+    console.error('Error sending SMS:', error);
+    throw new functions.https.HttpsError(
+      'internal',
+      'Failed to send OTP. Please try again later.'
+    );
+  }
+});
+
+/**
+ * Reset password using Admin SDK (for phone-based reset)
+ * 
+ * Usage from Flutter:
+ * final callable = FirebaseFunctions.instance.httpsCallable('resetPasswordByPhone');
+ * await callable.call({'userId': 'user123', 'newPassword': 'newPassword123'});
+ */
+exports.resetPasswordByPhone = functions.https.onCall(async (data, context) => {
+  const { userId, newPassword } = data;
+
+  if (!userId || !newPassword) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'userId and newPassword are required'
+    );
+  }
+
+  if (newPassword.length < 8) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Password must be at least 8 characters'
+    );
+  }
+
+  try {
+    // Get user's phone number from Firestore
+    const userDoc = await db.collection('users').doc(userId).get();
+    
+    if (!userDoc.exists) {
+      throw new functions.https.HttpsError('not-found', 'User not found');
+    }
+
+    const userData = userDoc.data();
+    const phoneNumber = userData.phoneNumber;
+    
+    if (!phoneNumber) {
+      throw new functions.https.HttpsError('not-found', 'Phone number not found for user');
+    }
+
+    // Find the Firebase Auth user by email (placeholder format)
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
+    const placeholderEmail = `phone_${phoneDigits}@oinkcheck.local`;
+
+    // Get user by email
+    let userRecord;
+    try {
+      userRecord = await admin.auth().getUserByEmail(placeholderEmail);
+    } catch (error) {
+      // If user not found by placeholder email, try to find by UID
+      if (error.code === 'auth/user-not-found') {
+        // Try to get user by UID if userId matches Firebase UID
+        try {
+          userRecord = await admin.auth().getUser(userId);
+        } catch (uidError) {
+          throw new functions.https.HttpsError('not-found', 'Firebase Auth user not found');
+        }
+      } else {
+        throw error;
+      }
+    }
+    
+    // Update password using Admin SDK
+    await admin.auth().updateUser(userRecord.uid, {
+      password: newPassword,
+    });
+
+    console.log(`Password reset for user ${userId} (${placeholderEmail})`);
+    return { success: true };
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    if (error instanceof functions.https.HttpsError) {
+      throw error;
+    }
+    throw new functions.https.HttpsError(
+      'internal',
+      'Failed to reset password. Please try again later.'
+    );
+  }
+});

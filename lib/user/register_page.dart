@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'login_page.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -34,7 +35,6 @@ class _RegisterPageState extends State<RegisterPage> {
   List<Map<String, String>> _cities = [];
   List<Map<String, String>> _barangays = [];
 
-  String? _selectedProvinceCode;
   String? _selectedCityCode;
 
   String? _selectedProvinceName;
@@ -92,7 +92,6 @@ class _RegisterPageState extends State<RegisterPage> {
             'name': provinceName,
           }
         ];
-        _selectedProvinceCode = province['code']?.toString();
         _selectedProvinceName = provinceName; // Use exact same string
       });
       _loadCitiesForProvince();
@@ -187,12 +186,12 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   String? _validateEmail(String? value) {
-    if (value == null || value.trim().isEmpty) {
-      return 'Please enter your email';
-    }
-    final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
-    if (!emailRegex.hasMatch(value)) {
-      return 'Please enter a valid email address';
+    // Email is now optional. If provided, validate format.
+    if (value != null && value.trim().isNotEmpty) {
+      final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
+      if (!emailRegex.hasMatch(value)) {
+        return 'Please enter a valid email address';
+      }
     }
     return null;
   }
@@ -224,6 +223,157 @@ class _RegisterPageState extends State<RegisterPage> {
       return 'Passwords do not match';
     }
     return null;
+  }
+
+  // --- Location verification (City/Municipality) ---
+  static const double _maxCityDistanceMeters = 20000; // 20km (centroid fallback)
+  static const double _maxAcceptableAccuracyMeters = 1500;
+
+  String _normalizeCityName(String s) {
+    var t = s.toLowerCase().trim();
+    // Remove common suffixes/prefixes to make matching more robust.
+    t = t.replaceAll(RegExp(r'\bcity\b'), '');
+    t = t.replaceAll(RegExp(r'\bmunicipality\b'), '');
+    t = t.replaceAll(RegExp(r'\bof\b'), '');
+    t = t.replaceAll(RegExp(r'[^a-z\s]'), ' ');
+    t = t.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return t;
+  }
+
+  Future<bool> _ensureLocationPermissionOrExplain() async {
+    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      _showErrorDialog(
+        'Please turn ON Location/GPS to create an account. '
+        'We use it to verify your selected city/municipality.',
+      );
+      // Best-effort: open settings (user may ignore).
+      try {
+        await Geolocator.openLocationSettings();
+      } catch (_) {}
+      return false;
+    }
+
+    var permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.denied) {
+      _showErrorDialog(
+        'Location permission is required to create an account. '
+        'Please allow it when prompted.',
+      );
+      return false;
+    }
+    if (permission == LocationPermission.deniedForever) {
+      _showErrorDialog(
+        'Location permission is permanently denied. '
+        'Please enable it in Settings to create an account.',
+      );
+      try {
+        await Geolocator.openAppSettings();
+      } catch (_) {}
+      return false;
+    }
+    return true;
+  }
+
+  Map<String, double>? _getSelectedCityCoordinates() {
+    final code = _selectedCityCode;
+    if (code != null && code.isNotEmpty) {
+      final coords = DavaoDelNorteLocations.getCityCoordinates(code);
+      if (coords != null) return coords;
+    }
+    final name = _selectedCityName?.trim();
+    if (name == null || name.isEmpty) return null;
+    final city = DavaoDelNorteLocations.getCityByName(name);
+    if (city == null) return null;
+    final lat = (city['lat'] as num?)?.toDouble();
+    final lng = (city['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return null;
+    return {'lat': lat, 'lng': lng};
+  }
+
+  Future<bool> _verifyUserIsInSelectedCity() async {
+    // Require selection first (existing validation also checks this).
+    final selectedCity = _selectedCityName?.trim();
+    if (selectedCity == null || selectedCity.isEmpty) return false;
+
+    final coords = _getSelectedCityCoordinates();
+    if (coords == null) {
+      // If we can't map the selected city to coordinates, don't hard-block.
+      return true;
+    }
+
+    final okPerms = await _ensureLocationPermissionOrExplain();
+    if (!okPerms) return false;
+
+    Position? pos;
+    try {
+      pos = await Geolocator.getLastKnownPosition();
+    } catch (_) {}
+    try {
+      pos ??= await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 12),
+      );
+    } catch (_) {
+      _showErrorDialog(
+        'Unable to get your current location. Please make sure GPS is ON and try again.',
+      );
+      return false;
+    }
+
+    if (pos.accuracy > _maxAcceptableAccuracyMeters) {
+      _showErrorDialog(
+        'Your location accuracy is too low (${pos.accuracy.toStringAsFixed(0)}m). '
+        'Please move to an open area, turn on High accuracy, and try again.',
+      );
+      return false;
+    }
+
+    // Prefer reverse-geocoding city name (more accurate than centroid distance).
+    try {
+      final detected =
+          await GeocodingService().reverseCityMunicipality(
+            lat: pos.latitude,
+            lng: pos.longitude,
+          );
+      if (detected != null && detected.trim().isNotEmpty) {
+        final sel = _normalizeCityName(selectedCity);
+        final det = _normalizeCityName(detected);
+        if (sel.isNotEmpty &&
+            det.isNotEmpty &&
+            sel != det &&
+            !sel.contains(det) &&
+            !det.contains(sel)) {
+          _showErrorDialog(
+            'Your current location appears to be in "$detected", but you selected "$selectedCity". '
+            'Please select your correct city/municipality and try again.',
+          );
+          return false;
+        }
+      }
+    } catch (_) {
+      // Ignore and fall back to centroid distance.
+    }
+
+    final d = Geolocator.distanceBetween(
+      pos.latitude,
+      pos.longitude,
+      coords['lat']!,
+      coords['lng']!,
+    );
+
+    if (d > _maxCityDistanceMeters) {
+      _showErrorDialog(
+        'Your current location does not match the city/municipality you selected ("$selectedCity"). '
+        'Please select your correct city/municipality and try again.',
+      );
+      return false;
+    }
+
+    return true;
   }
 
   void _handleRegister() async {
@@ -266,11 +416,28 @@ class _RegisterPageState extends State<RegisterPage> {
       _isLoading = true;
     });
 
+    // Verify user location matches the selected city/municipality.
+    // If denied or mismatched, block registration (and prompt again next attempt).
+    final inCity = await _verifyUserIsInSelectedCity();
+    if (!inCity) {
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
     try {
+      // Email is optional. If not provided, auto-generate placeholder for Firebase Auth.
+      final emailInput = _emailController.text.trim();
+      final phoneInput = _phoneController.text.trim();
+      final emailForFirebase = emailInput.isNotEmpty
+          ? emailInput
+          : 'phone_${phoneInput.replaceAll(RegExp(r'[^\d]'), '')}@oinkcheck.local';
+      
       // Create user with Firebase Auth
       UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
-            email: _emailController.text.trim(),
+            email: emailForFirebase,
             password: _passwordController.text.trim(),
           );
       final user = userCredential.user;
@@ -279,6 +446,7 @@ class _RegisterPageState extends State<RegisterPage> {
         final lastName = _lastNameController.text.trim();
         final fullName = ('$firstName $lastName').trim();
         // Save user profile to Firestore
+        // Store actual email (if provided) or empty string (so we know user has no email)
         await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
           'userId': user.uid,
           'firstName': firstName,
@@ -292,8 +460,9 @@ class _RegisterPageState extends State<RegisterPage> {
           // Combined address for display/search
           'address':
               '${_addressController.text.trim()}, $_selectedBarangayName, $_selectedCityName, $_selectedProvinceName',
-          'phoneNumber': _phoneController.text.trim(),
-          'email': _emailController.text.trim(),
+          'phoneNumber': phoneInput,
+          'email': emailInput.isNotEmpty ? emailInput : '', // Store empty if not provided
+          'hasEmail': emailInput.isNotEmpty, // Flag to track if user has real email
           'role': 'farmer',
           'status': 'active',
           'imageProfile': '',
@@ -866,8 +1035,8 @@ class _RegisterPageState extends State<RegisterPage> {
 
                             const SizedBox(height: 14),
 
-                            // EMAIL
-                            label('EMAIL'),
+                            // EMAIL (optional)
+                            label('EMAIL (Optional)'),
                             TextField(
                               key: const ValueKey('textfield_email'),
                               controller: _emailController,
@@ -884,7 +1053,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                 }
                               },
                               decoration: fieldDecoration(
-                                hint: 'you@example.com',
+                                hint: 'you@example.com (optional)',
                                 hasError: hasErr('email'),
                               ),
                             ),
@@ -923,11 +1092,6 @@ class _RegisterPageState extends State<RegisterPage> {
                               onChanged: (value) {
                                 setState(() {
                                   _selectedProvinceName = value;
-                                  final match = _provinces.firstWhere(
-                                    (p) => p['name'] == value,
-                                    orElse: () => {'code': '', 'name': ''},
-                                  );
-                                  _selectedProvinceCode = match['code'];
                                 });
                                 _loadCitiesForProvince();
                               },
