@@ -29,6 +29,8 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     'infected_fungal_ringworm',
     'infected_parasitic_mange',
     'infected_viral_foot_and_mouth',
+    'dermatatis',
+    'pityriasis_rosea',
   ];
 
   String _canonicalDiseaseKey(String raw) {
@@ -57,6 +59,11 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
         return 'infected_viral_foot_and_mouth';
       case 'swine_pox':
         return 'swine_pox';
+      case 'dermatatis':
+      case 'dermatitis':
+        return 'dermatatis';
+      case 'pityriasis_rosea':
+        return 'pityriasis_rosea';
       default:
         return k;
     }

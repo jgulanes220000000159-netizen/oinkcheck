@@ -20,6 +20,8 @@ class _DiseasesPageState extends State<DiseasesPage> {
     {'id': 'mange', 'name': 'Mange'},
     {'id': 'foot_and_mouth', 'name': 'Foot and Mouth Disease'},
     {'id': 'sunburn', 'name': 'Sunburn'},
+    {'id': 'dermatitis', 'name': 'Dermatitis'},
+    {'id': 'pityriasis_rosea', 'name': 'Pityriasis Rosea'},
   ];
 
   // Static disease treatment information
@@ -101,6 +103,25 @@ class _DiseasesPageState extends State<DiseasesPage> {
         'Prevention: apply sunscreen (pet-safe, zinc oxide-based) or provide adequate shade and shelter',
       ],
     },
+    'Dermatitis': {
+      'scientificName': 'Multifactorial Inflammatory Skin Disease',
+      'treatments': [
+        'Identify and remove underlying causes such as wet bedding, rough flooring, or chemical irritants',
+        'Clean affected skin gently with mild antiseptic solution',
+        'Apply topical corticosteroid or zinc oxide cream to reduce inflammation and protect the skin',
+        'Provide systemic antibiotics if lesions are deep or secondarily infected (based on veterinary guidance)',
+        'Improve environmental hygiene and reduce stocking density',
+      ],
+    },
+    'Pityriasis Rosea': {
+      'scientificName': 'Idiopathic Papulosquamous Dermatosis',
+      'treatments': [
+        'Most cases are self-limiting – monitor and provide supportive care',
+        'Reduce stress factors and improve environmental comfort',
+        'Apply soothing topical preparations (e.g., aloe vera or mild emollients) to reduce itching',
+        'Consult veterinarian if lesions worsen or if secondary infection develops',
+      ],
+    },
   };
 
   String _searchQuery = '';
@@ -115,6 +136,8 @@ class _DiseasesPageState extends State<DiseasesPage> {
     if (n == 'mange') return 'mange';
     if (n == 'foot and mouth disease') return 'foot_and_mouth';
     if (n == 'sunburn') return 'sunburn';
+    if (n == 'dermatitis') return 'dermatitis';
+    if (n == 'pityriasis rosea') return 'pityriasis_rosea';
     return n.replaceAll(' ', '_');
   }
 

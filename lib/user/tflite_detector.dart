@@ -78,38 +78,23 @@ class TFLiteDetector {
               .map((e) => e.trim())
               .where((e) => e.isNotEmpty && e.toLowerCase() != 'place')
               .toList();
-      _interpreter = await Interpreter.fromAsset('assets/vv9.tflite');
+      _interpreter = await Interpreter.fromAsset('assets/yolomodel.tflite');
 
       final inTensor = _interpreter!.getInputTensor(0);
       final outTensor = _interpreter!.getOutputTensor(0);
       final inShape = inTensor.shape; // e.g. [1, 640, 640, 3]
-      final outShape = outTensor.shape; // e.g. [1, 13, 2100]
+      final outShape =
+          outTensor
+              .shape; // e.g. [1, 300, 6] for YOLOv8 (N boxes, 4+obj+classes)
 
       // Set expected input size from the model tensor.
       if (inShape.length >= 3 && inShape[1] > 0) {
         _inputSize = inShape[1];
       }
 
-      // Typical Ultralytics YOLO export: [1, 5 + classes, numBoxes]
-      if (outShape.length >= 2 && outShape[1] >= 6) {
-        _modelClassCount = outShape[1] - 5;
-      } else {
-        _modelClassCount = _labels.length;
-      }
-
-      // Auto-align labels to model class count (prevents indexing issues).
-      if (_labels.length != _modelClassCount) {
-        print(
-          '⚠️  Labels/model class mismatch: labels=${_labels.length}, model=$_modelClassCount. Auto-aligning labels.',
-        );
-        if (_labels.length > _modelClassCount) {
-          _labels = _labels.take(_modelClassCount).toList();
-        } else {
-          for (var i = _labels.length; i < _modelClassCount; i++) {
-            _labels.add('class_$i');
-          }
-        }
-      }
+      // For this export format, the model already encodes the best class id in the last
+      // coordinate, so we just rely on the labels file for names.
+      _modelClassCount = _labels.length;
 
       print('✅ Model loaded');
       print('   - input tensor: $inShape');
@@ -135,6 +120,7 @@ class TFLiteDetector {
       final image = decoded == null ? null : img.bakeOrientation(decoded);
       if (image == null) throw Exception('Image decoding failed');
 
+      // Preprocess with letterbox (for model input only)
       final resized = letterbox(image, _inputSize, _inputSize);
       final input = Float32List(_inputSize * _inputSize * 3);
       final pixels = resized.getBytes();
@@ -158,8 +144,8 @@ class TFLiteDetector {
 
       _interpreter!.run(input.reshape(inputShape), output);
 
-      final results = <DetectionResult>[];
-      final outputData = output[0];
+      final rows = output[0] as List<dynamic>;
+      final detections = <DetectionResult>[];
 
       print('🔍 Detection Debug Info:');
       print('   - Image size: ${image.width}x${image.height}');
@@ -168,270 +154,104 @@ class TFLiteDetector {
       print('   - Confidence threshold: $_currentConfidenceThreshold');
       print('   - NMS threshold: $_currentNmsThreshold');
 
-      final detections = <DetectionResult>[];
       int totalDetections = 0;
-      int validDetections = 0;
-      double bestConf = 0.0;
-      String bestLabel = 'none';
-      double bestObj = 0.0;
-      double bestCls = 0.0;
-      int bestIdx = -1;
+      int keptDetections = 0;
 
-      // Inspect output ranges to decide whether to apply sigmoid.
-      double objMin = double.infinity;
-      double objMax = -double.infinity;
-      double clsMin = double.infinity;
-      double clsMax = -double.infinity;
-      for (var i = 0; i < outputData[0].length; i++) {
-        final o = outputData[4][i];
-        if (o < objMin) objMin = o;
-        if (o > objMax) objMax = o;
-        for (var c = 5; c < outputData.length; c++) {
-          final v = outputData[c][i];
-          if (v < clsMin) clsMin = v;
-          if (v > clsMax) clsMax = v;
-        }
-      }
-      final applySigmoid = _shouldApplySigmoid(
-        objMin: objMin,
-        objMax: objMax,
-        clsMin: clsMin,
-        clsMax: clsMax,
-      );
-      // Some exports produce extremely tiny obj values (e.g., 1e-5) which effectively behaves like "no object".
-      // Treat obj as usable only if it has meaningful magnitude.
-      final bool useObjectness = objMax.abs() > 1e-3 || objMin.abs() > 1e-3;
-      print(
-        '   - Output ranges: obj[min=${objMin.toStringAsFixed(4)} max=${objMax.toStringAsFixed(4)}] '
-        'cls[min=${clsMin.toStringAsFixed(4)} max=${clsMax.toStringAsFixed(4)}] '
-        'applySigmoid=$applySigmoid useObjectness=$useObjectness',
-      );
-
-      // Track best class-only candidate (useful for "healthy" where objectness may be near-zero).
-      double bestClsOnly = 0.0;
-      String bestClsOnlyLabel = 'none';
-
-      for (var i = 0; i < outputData[0].length; i++) {
+      // YOLOv8 TFLite TFLite export (Ultralytics) uses [x1, y1, x2, y2, score, class_id]
+      // with coordinates normalized 0..1 in model input space.
+      for (final row in rows) {
         totalDetections++;
-        var maxConf = 0.0;
-        var maxClass = 0;
 
-        // outputData layout: [x, y, w, h, obj, cls0, cls1, ...]
-        for (var c = 5; c < outputData.length; c++) {
-          final raw = outputData[c][i];
-          final conf = applySigmoid ? _sigmoid(raw) : raw;
-          if (conf > maxConf) {
-            maxConf = conf;
-            maxClass = c - 5;
-          }
+        double x1 = (row[0] as num).toDouble();
+        double y1 = (row[1] as num).toDouble();
+        double x2 = (row[2] as num).toDouble();
+        double y2 = (row[3] as num).toDouble();
+        final score = (row[4] as num).toDouble();
+        final clsIdRaw = (row[5] as num).toDouble();
+        final clsIdx = clsIdRaw.round().clamp(0, _labels.length - 1);
+
+        if (score < _currentConfidenceThreshold) continue;
+
+        // Step 1: convert normalized corner coords into model-input pixel space.
+        final yoloX1 = x1 * _inputSize;
+        final yoloY1 = y1 * _inputSize;
+        final yoloX2 = x2 * _inputSize;
+        final yoloY2 = y2 * _inputSize;
+
+        // Step 2: undo letterbox padding to project back to original image space.
+        final scale = min(_inputSize / image.width, _inputSize / image.height);
+        final newUnpaddedW = image.width * scale;
+        final newUnpaddedH = image.height * scale;
+        final padX = (_inputSize - newUnpaddedW) / 2;
+        final padY = (_inputSize - newUnpaddedH) / 2;
+
+        final originalX1 = (yoloX1 - padX) / scale;
+        final originalY1 = (yoloY1 - padY) / scale;
+        final originalX2 = (yoloX2 - padX) / scale;
+        final originalY2 = (yoloY2 - padY) / scale;
+
+        final left = originalX1;
+        final top = originalY1;
+        final right = originalX2;
+        final bottom = originalY2;
+
+        final box = Rect.fromLTRB(
+          left.clamp(0.0, image.width.toDouble()),
+          top.clamp(0.0, image.height.toDouble()),
+          right.clamp(0.0, image.width.toDouble()),
+          bottom.clamp(0.0, image.height.toDouble()),
+        );
+
+        // Reject boxes that cover almost the whole image and are not very confident
+        final boxArea = box.width * box.height;
+        final imageArea = image.width * image.height;
+        final coverageRatio = imageArea > 0 ? boxArea / imageArea : 0.0;
+        if (coverageRatio > 0.95 && score < 0.7) {
+          continue;
         }
 
-        if (maxConf > bestClsOnly) {
-          bestClsOnly = maxConf;
-          bestClsOnlyLabel = _getDiseaseLabel(maxClass);
-        }
-
-        final double obj;
-        if (!useObjectness) {
-          // Some exports already fold objectness into class probabilities or omit it.
-          obj = 1.0;
-        } else {
-          final rawObj = outputData[4][i];
-          obj = applySigmoid ? _sigmoid(rawObj) : rawObj;
-        }
-
-        // If objectness is not present/usable, confidence == class score.
-        final finalConf = useObjectness ? (obj * maxConf) : maxConf;
-        if (finalConf > bestConf) {
-          bestConf = finalConf;
-          bestLabel = _getDiseaseLabel(maxClass);
-          bestObj = obj;
-          bestCls = maxConf;
-          bestIdx = i;
-        }
-
-        if (finalConf > _currentConfidenceThreshold) {
-          // Additional validation: reject if objectness is very low (likely false positive)
-          // This helps catch cases where class score is high but there's no actual object
-          if (useObjectness && obj < 0.15 && finalConf < 0.6) {
-            print(
-              '⚠️  Skipping detection with low objectness: ${_getDiseaseLabel(maxClass)} '
-              'conf=${(finalConf * 100).toStringAsFixed(1)}% obj=${obj.toStringAsFixed(3)}',
-            );
-            continue;
-          }
-
-          validDetections++;
-          // YOLO outputs normalized coordinates (0-1) for center point and dimensions
-          final centerX = outputData[0][i];
-          final centerY = outputData[1][i];
-          final width = outputData[2][i];
-          final height = outputData[3][i];
-
-          // Calculate letterboxing parameters - fixed logic
-          final scale = min(
-            _inputSize / image.width,
-            _inputSize / image.height,
-          );
-          final newUnpaddedW = image.width * scale;
-          final newUnpaddedH = image.height * scale;
-          final padX = (_inputSize - newUnpaddedW) / 2;
-          final padY = (_inputSize - newUnpaddedH) / 2;
-
-          // Convert from YOLO normalized coordinates to original image coordinates
-          // First convert center point and dimensions to absolute coordinates in YOLO space
-          final yoloCenterX = centerX * _inputSize;
-          final yoloCenterY = centerY * _inputSize;
-          final yoloWidth = width * _inputSize;
-          final yoloHeight = height * _inputSize;
-
-          // Remove padding and scale back to original image space
-          final originalCenterX = (yoloCenterX - padX) / scale;
-          final originalCenterY = (yoloCenterY - padY) / scale;
-          final originalWidth = yoloWidth / scale;
-          final originalHeight = yoloHeight / scale;
-
-          // Convert center point and dimensions to LTRB format
-          final left = originalCenterX - (originalWidth / 2);
-          final top = originalCenterY - (originalHeight / 2);
-          final right = originalCenterX + (originalWidth / 2);
-          final bottom = originalCenterY + (originalHeight / 2);
-
-          // Validate bounding box coordinates
-          final box = Rect.fromLTRB(
-            left.clamp(0, image.width.toDouble()),
-            top.clamp(0, image.height.toDouble()),
-            right.clamp(0, image.width.toDouble()),
-            bottom.clamp(0, image.height.toDouble()),
-          );
-
-          // Reject if bounding box is suspiciously large (covers >95% of image)
-          final boxArea = box.width * box.height;
-          final imageArea = image.width * image.height;
-          final coverageRatio = boxArea / imageArea;
-
-          if (coverageRatio > 0.95 && finalConf < 0.7) {
-            print(
-              '⚠️  Skipping detection with suspiciously large bounding box: '
-              '${_getDiseaseLabel(maxClass)} conf=${(finalConf * 100).toStringAsFixed(1)}% '
-              'coverage=${(coverageRatio * 100).toStringAsFixed(1)}%',
-            );
-            continue;
-          }
-
-          detections.add(
-            DetectionResult(
-              label: _getDiseaseLabel(maxClass),
-              confidence: finalConf,
-              boundingBox: box,
-            ),
-          );
-        }
+        detections.add(
+          DetectionResult(
+            label: _getDiseaseLabel(clsIdx),
+            confidence: score,
+            boundingBox: box,
+          ),
+        );
+        keptDetections++;
       }
 
+      // Sort by confidence and apply simple NMS
       detections.sort((a, b) => b.confidence.compareTo(a.confidence));
+      final results = <DetectionResult>[];
+      final remaining = List<DetectionResult>.from(detections);
 
-      while (detections.isNotEmpty) {
-        final detection = detections.removeAt(0);
-        results.add(detection);
-        detections.removeWhere((other) {
-          final intersection = detection.boundingBox.intersect(
-            other.boundingBox,
-          );
-          final intersectionArea = intersection.width * intersection.height;
-          final otherArea = other.boundingBox.width * other.boundingBox.height;
-          final iou = intersectionArea / otherArea;
+      while (remaining.isNotEmpty) {
+        final current = remaining.removeAt(0);
+        results.add(current);
+
+        remaining.removeWhere((other) {
+          final intersection = current.boundingBox.intersect(other.boundingBox);
+          final interArea = intersection.width * intersection.height;
+          if (interArea <= 0) return false;
+
+          final areaA = current.boundingBox.width * current.boundingBox.height;
+          final areaB = other.boundingBox.width * other.boundingBox.height;
+          final unionArea = areaA + areaB - interArea;
+          if (unionArea <= 0) return false;
+
+          final iou = interArea / unionArea;
           return iou > _currentNmsThreshold;
         });
       }
 
       print('📊 Detection Summary:');
       print('   - Total raw detections: $totalDetections');
-      print('   - Valid detections (above threshold): $validDetections');
+      print('   - Detections kept after score filter: $keptDetections');
       print('   - Final detections after NMS: ${results.length}');
-      print(
-        '   - Best candidate (pre-threshold): $bestLabel ${(bestConf * 100).toStringAsFixed(6)}%',
-      );
-      print(
-        '     ↳ bestObj=${bestObj.toStringAsFixed(6)} bestCls=${bestCls.toStringAsFixed(6)} idx=$bestIdx',
-      );
-      print(
-        '   - Best class-only: $bestClsOnlyLabel ${(bestClsOnly * 100).toStringAsFixed(2)}%',
-      );
 
-      // Filter out suspicious detections (likely false positives)
-      final filteredResults = <DetectionResult>[];
-      for (var result in results) {
-        final box = result.boundingBox;
-        final boxArea = box.width * box.height;
-        final imageArea = image.width * image.height;
-        final coverageRatio = boxArea / imageArea;
-
-        // Reject detections that cover too much of the image (likely false positives)
-        // Also reject if confidence is suspiciously low (around 0.5 suggests random noise)
-        if (coverageRatio > 0.95 && result.confidence < 0.6) {
-          print(
-            '⚠️  Rejected suspicious detection: ${result.label} ${(result.confidence * 100).toStringAsFixed(1)}% '
-            '(coverage: ${(coverageRatio * 100).toStringAsFixed(1)}%, likely false positive)',
-          );
-          continue;
-        }
-
-        // Reject if objectness is very low (even if it passed threshold)
-        // This helps catch cases where class score is high but there's no actual object
-        if (useObjectness && bestObj < 0.1 && result.confidence < 0.6) {
-          print(
-            '⚠️  Rejected low objectness detection: ${result.label} ${(result.confidence * 100).toStringAsFixed(1)}% '
-            '(objectness: ${bestObj.toStringAsFixed(3)}, likely false positive)',
-          );
-          continue;
-        }
-
-        filteredResults.add(result);
-      }
-
-      if (filteredResults.isNotEmpty) {
-        print('🎯 Detected objects:');
-        for (var result in filteredResults) {
-          print(
-            '   - ${result.label}: ${(result.confidence * 100).toStringAsFixed(1)}% at ${result.boundingBox}',
-          );
-        }
-        return filteredResults;
-      } else {
-        print('⚠️  No objects detected! Consider:');
+      for (var r in results) {
         print(
-          '   - Lowering confidence threshold (currently $_currentConfidenceThreshold)',
-        );
-        print('   - Checking if model is appropriate for your images');
-        print('   - Verifying image quality and lighting');
-
-        // Fallback: if objectness is effectively absent (or tiny), treat as image-level classification.
-        // BUT: Only use this if the class confidence is reasonably high (>= 0.7) to avoid false positives
-        // This makes "healthy" produce a meaningful confidence instead of ~0%, but prevents
-        // false positives on empty/white background images.
-        if (!useObjectness &&
-            bestClsOnlyLabel != 'none' &&
-            bestClsOnly >= 0.7) {
-          print(
-            '   - Using class-only fallback: $bestClsOnlyLabel ${(bestClsOnly * 100).toStringAsFixed(1)}%',
-          );
-          return [
-            DetectionResult(
-              label: bestClsOnlyLabel,
-              confidence: bestClsOnly,
-              boundingBox: Rect.fromLTRB(
-                0,
-                0,
-                image.width.toDouble(),
-                image.height.toDouble(),
-              ),
-            ),
-          ];
-        }
-
-        print(
-          '   - Best class-only score too low (${(bestClsOnly * 100).toStringAsFixed(1)}%), rejecting to avoid false positives',
+          '   - ${r.label}: ${(r.confidence * 100).toStringAsFixed(1)}% at ${r.boundingBox}',
         );
       }
 

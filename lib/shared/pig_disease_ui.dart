@@ -11,6 +11,8 @@ class PigDiseaseUI {
     'infected_parasitic_mange': Color(0xFF6D4C41), // brown
     'infected_viral_foot_and_mouth': Color(0xFFD81B60), // pink
     'swine_pox': Color(0xFF43A047), // green
+    'dermatatis': Color(0xFF00ACC1), // cyan (dermatitis-like)
+    'pityriasis_rosea': Color(0xFF5E35B1), // deep purple
     // fallback
     'unknown': Colors.grey,
   };
@@ -40,6 +42,11 @@ class PigDiseaseUI {
         return 'foot_and_mouth';
       case 'swine_pox':
         return 'swine_pox';
+      case 'dermatatis':
+      case 'dermatitis':
+        return 'dermatitis';
+      case 'pityriasis_rosea':
+        return 'pityriasis_rosea';
       case 'healthy':
         return 'healthy';
       default:
@@ -72,6 +79,11 @@ class PigDiseaseUI {
         return 'Foot-and-Mouth Disease';
       case 'swine_pox':
         return 'Swine Pox';
+      case 'dermatatis':
+      case 'dermatitis':
+        return 'Dermatitis';
+      case 'pityriasis_rosea':
+        return 'Pityriasis Rosea';
       default:
         // nice fallback for any future classes
         return key
@@ -157,6 +169,9 @@ class PigDiseaseUI {
       case 'infected_parasitic_mange':
       case 'infected_viral_foot_and_mouth':
       case 'swine_pox':
+      case 'dermatatis':
+      case 'dermatitis':
+      case 'pityriasis_rosea':
         return true;
       default:
         // Fallback: unknown -> not contagious

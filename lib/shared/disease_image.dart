@@ -40,6 +40,12 @@ class DiseaseImage extends StatelessWidget {
       case 'swine_pox':
       case 'swine pox':
         return 'assets/replace_disease/swine_pox.jpg';
+      case 'dermatatis':
+      case 'dermatitis':
+        return 'assets/replace_disease/dermatitis.jpg';
+      case 'pityriasis_rosea':
+      case 'pityriasis rosea':
+        return 'assets/replace_disease/pityriasis_rosea.jpg';
       default:
         // Fallback to default PNG location if you later add custom images there.
         return 'assets/images/diseases/$diseaseId.png';
