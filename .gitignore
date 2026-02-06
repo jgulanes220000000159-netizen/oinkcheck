@@ -46,4 +46,23 @@ app.*.map.json
 
 # Firebase (do not commit app-specific config)
 android/app/google-services.json
+ios/Runner/GoogleService-Info.plist
 .env
+.env.local
+.env.*.local
+
+# Android signing keys (NEVER commit these!)
+android/key.properties
+android/app/upload-keystore.jks
+android/app/*.keystore
+android/app/*.jks
+
+# Service account keys (Firebase Admin SDK)
+**/service-account*.json
+**/*-service-account*.json
+**/firebase-adminsdk*.json
+
+# API keys and secrets
+**/secrets.json
+**/config.json
+**/credentials.json

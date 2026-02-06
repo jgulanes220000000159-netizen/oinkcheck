@@ -32,6 +32,31 @@ class _LoginPageState extends State<LoginPage> {
   // Remove before release.
   static const String _defaultPassword = '@Sherwen24';
 
+  String _normalizePhMobile(String input) {
+    final digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return '';
+    if (digits.startsWith('63') && digits.length == 12) return '0${digits.substring(2)}';
+    if (digits.startsWith('9') && digits.length == 10) return '0$digits';
+    return digits;
+  }
+
+  String _toPhE164(String input) {
+    // Converts common PH formats to +63XXXXXXXXXX (E.164).
+    final normalized09 = _normalizePhMobile(input);
+    if (normalized09.startsWith('09') && normalized09.length == 11) {
+      return '+63${normalized09.substring(1)}'; // drop leading 0
+    }
+    final digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.startsWith('63') && digits.length == 12) return '+$digits';
+    if (digits.startsWith('9') && digits.length == 10) return '+63$digits';
+    return input.trim();
+  }
+
+  bool _looksLikeEmail(String input) {
+    final s = input.trim();
+    return RegExp(r'^[\w\.\-\+]+@([\w\-]+\.)+[\w\-]{2,}$').hasMatch(s);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -59,7 +84,7 @@ class _LoginPageState extends State<LoginPage> {
       _fieldErrors = {
         'email':
             _emailController.text.trim().isEmpty
-                ? 'Please enter your email'
+                ? 'Please enter your email or phone number'
                 : null,
         'password':
             _passwordController.text.trim().isEmpty
@@ -78,36 +103,96 @@ class _LoginPageState extends State<LoginPage> {
       });
 
       try {
-        final email = _emailController.text.trim();
+        final identifier = _emailController.text.trim(); // email or phone
         final password = _passwordController.text.trim();
 
-        // First, check if the email exists in Firestore
-        final usersQuery =
-            await FirebaseFirestore.instance
+        String emailForFirebase = identifier;
+
+        // If user typed phone number, look up account by phone and map to placeholder email (if needed).
+        if (!_looksLikeEmail(identifier)) {
+          final normalizedPhone = _normalizePhMobile(identifier);
+          final e164Phone = _toPhE164(identifier);
+          final candidates = <String>{
+            normalizedPhone,
+            identifier.trim(),
+            e164Phone,
+            e164Phone.replaceAll('+', ''), // sometimes stored without +
+          }.where((s) => s.isNotEmpty).toList();
+
+          QuerySnapshot usersQuery;
+          QuerySnapshot? found;
+          for (final candidate in candidates) {
+            usersQuery = await FirebaseFirestore.instance
                 .collection('users')
-                .where('email', isEqualTo: email)
+                .where('phoneNumber', isEqualTo: candidate)
                 .limit(1)
                 .get();
+            if (usersQuery.docs.isNotEmpty) {
+              found = usersQuery;
+              break;
+            }
+          }
 
-        if (usersQuery.docs.isEmpty) {
-          setState(() {
-            _isLoading = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Email address "$email" is not registered. Please check your email or create a new account.',
+          final resolvedQuery = found;
+
+          if (resolvedQuery == null || resolvedQuery.docs.isEmpty) {
+            setState(() {
+              _isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Phone number "$identifier" is not registered. Please check your number or create a new account.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 4),
               ),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 4),
-            ),
-          );
-          return;
+            );
+            return;
+          }
+
+          final userDoc = resolvedQuery.docs.first;
+          final data = userDoc.data() as Map<String, dynamic>;
+          final realEmail = (data['email'] as String?)?.trim() ?? '';
+          final hasRealEmail = realEmail.isNotEmpty && !realEmail.endsWith('@oinkcheck.local');
+
+          // If they registered without email, Firebase Auth email is the placeholder: phone_<digits>@oinkcheck.local
+          if (hasRealEmail) {
+            emailForFirebase = realEmail;
+          } else {
+            // Try to build placeholder email from the best phone we have.
+            final phoneDigits = normalizedPhone.isNotEmpty
+                ? normalizedPhone.replaceAll(RegExp(r'\D'), '')
+                : identifier.replaceAll(RegExp(r'\D'), '');
+            emailForFirebase = 'phone_${phoneDigits}@oinkcheck.local';
+          }
+        } else {
+          // Email login: (keep existing behavior) ensure it exists in Firestore first
+          final usersQuery = await FirebaseFirestore.instance
+              .collection('users')
+              .where('email', isEqualTo: identifier)
+              .limit(1)
+              .get();
+          if (usersQuery.docs.isEmpty) {
+            setState(() {
+              _isLoading = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Email address "$identifier" is not registered. Please check your email or create a new account.',
+                ),
+                backgroundColor: Colors.orange,
+                duration: const Duration(seconds: 4),
+              ),
+            );
+            return;
+          }
         }
 
-        // Email exists, now try to sign in
+        // Now try to sign in with Firebase Auth (email/password). For phone-only users, this uses the placeholder email.
         UserCredential userCredential = await FirebaseAuth.instance
-            .signInWithEmailAndPassword(email: email, password: password);
+            .signInWithEmailAndPassword(email: emailForFirebase, password: password);
 
         final user = userCredential.user;
         if (user != null) {

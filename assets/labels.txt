@@ -1,3 +1,5 @@
+aa
+dermatatis
 healthy
 infected_bacterial_erysipelas
 infected_bacterial_greasy
@@ -5,4 +7,5 @@ infected_environmental_sunburn
 infected_fungal_ringworm
 infected_parasitic_mange
 infected_viral_foot_and_mouth
+pityriasis_rosea
 swine_pox

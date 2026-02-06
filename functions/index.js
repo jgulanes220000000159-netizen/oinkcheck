@@ -23,6 +23,17 @@ const gmailPassword = defineString("GMAIL_PASSWORD", {
   default: "your-app-password",
 });
 
+// Twilio configuration using environment parameters (v7 compatible)
+const twilioAccountSid = defineString("TWILIO_ACCOUNT_SID", {
+  default: "",
+});
+const twilioAuthToken = defineString("TWILIO_AUTH_TOKEN", {
+  default: "",
+});
+const twilioPhoneNumber = defineString("TWILIO_PHONE_NUMBER", {
+  default: "",
+});
+
 // Function to get transporter (lazy initialization to avoid calling .value() at module level)
 function getTransporter() {
   return nodemailer.createTransport({
@@ -415,11 +426,11 @@ let twilioClient = null;
 
 function getTwilioClient() {
   if (!twilioClient) {
-    const accountSid = functions.config().twilio?.account_sid;
-    const authToken = functions.config().twilio?.auth_token;
+    const accountSid = twilioAccountSid.value();
+    const authToken = twilioAuthToken.value();
     
     if (!accountSid || !authToken) {
-      throw new Error('Twilio credentials not configured. Set firebase functions:config:set twilio.account_sid and twilio.auth_token');
+      throw new Error('Twilio credentials not configured. Set environment variables: TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN');
     }
     
     twilioClient = twilio(accountSid, authToken);
@@ -453,16 +464,16 @@ exports.sendPasswordResetOTP = functions.https.onCall(async (data, context) => {
 
   try {
     const client = getTwilioClient();
-    const twilioPhoneNumber = functions.config().twilio?.phone_number;
+    const fromPhoneNumber = twilioPhoneNumber.value();
     
-    if (!twilioPhoneNumber) {
-      throw new Error('Twilio phone number not configured. Set firebase functions:config:set twilio.phone_number');
+    if (!fromPhoneNumber) {
+      throw new Error('Twilio phone number not configured. Set environment variable: TWILIO_PHONE_NUMBER');
     }
 
     // Send SMS via Twilio
     const message = await client.messages.create({
       body: `Your OinkCheck password reset code is: ${otp}. This code expires in 10 minutes.`,
-      from: twilioPhoneNumber,
+      from: fromPhoneNumber,
       to: formattedPhone,
     });
 

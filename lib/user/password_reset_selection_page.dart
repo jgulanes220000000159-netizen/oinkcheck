@@ -25,6 +25,14 @@ class _PasswordResetSelectionPageState
   String? _userPhone;
   String? _userId;
 
+  String _normalizePhMobile(String input) {
+    final digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return '';
+    if (digits.startsWith('63') && digits.length == 12) return '0${digits.substring(2)}';
+    if (digits.startsWith('9') && digits.length == 10) return '0$digits';
+    return digits;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -38,7 +46,8 @@ class _PasswordResetSelectionPageState
     });
 
     try {
-      final phone = _phoneController.text.trim();
+      final phoneRaw = _phoneController.text.trim();
+      final phone = _normalizePhMobile(phoneRaw);
       final email = _emailController.text.trim();
 
       if (phone.isEmpty && email.isEmpty) {
@@ -58,6 +67,14 @@ class _PasswordResetSelectionPageState
             .where('phoneNumber', isEqualTo: phone)
             .limit(1)
             .get();
+        // Backward-compat: old users may have stored non-normalized phoneNumber (with spaces/dashes)
+        if (query.docs.isEmpty && phoneRaw.isNotEmpty && phoneRaw != phone) {
+          query = await FirebaseFirestore.instance
+              .collection('users')
+              .where('phoneNumber', isEqualTo: phoneRaw)
+              .limit(1)
+              .get();
+        }
       }
 
       // If not found and email provided, search by email

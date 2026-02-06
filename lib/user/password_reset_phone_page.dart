@@ -53,44 +53,19 @@ class _PasswordResetPhonePageState extends State<PasswordResetPhonePage> {
             'used': false,
           });
 
-      // TODO: Call Firebase Cloud Function to send SMS
-      // For now, we'll show the OTP in a dialog for testing
-      // In production, remove this and use the Cloud Function
-      if (mounted) {
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder:
-              (context) => AlertDialog(
-                title: const Text('OTP (Testing Only)'),
-                content: Text(
-                  'OTP: $otp\n\nIn production, this will be sent via SMS.',
-                  style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('OK'),
-                  ),
-                ],
-              ),
-        );
-      }
-
-      // Call Cloud Function to send SMS (if deployed)
+      // Call Cloud Function to send SMS via Twilio
       try {
         final firebaseFunctions = functions.FirebaseFunctions.instance;
         final callable = firebaseFunctions.httpsCallable(
           'sendPasswordResetOTP',
         );
         await callable.call({'phoneNumber': widget.phoneNumber, 'otp': otp});
+        print('✅ OTP sent via SMS to ${widget.phoneNumber}');
       } catch (e) {
-        // Cloud Function not deployed yet - that's OK for testing
-        // OTP is already stored in Firestore, so user can still verify
-        print('Cloud Function not available (testing mode): $e');
+        // If Cloud Function fails, show error but OTP is still stored in Firestore
+        print('❌ Failed to send SMS: $e');
+        // Still allow user to proceed - they can manually enter OTP if SMS fails
+        // In production, you might want to show an error dialog here
       }
 
       setState(() {
@@ -99,9 +74,19 @@ class _PasswordResetPhonePageState extends State<PasswordResetPhonePage> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = 'Failed to send OTP. Please try again.';
+        // Show more specific error message
+        String errorMsg = 'Failed to send OTP. Please try again.';
+        if (e.toString().contains('permission') ||
+            e.toString().contains('PERMISSION_DENIED')) {
+          errorMsg = 'Permission denied. Please check Firestore rules.';
+        } else if (e.toString().contains('network') ||
+            e.toString().contains('Network')) {
+          errorMsg = 'Network error. Please check your internet connection.';
+        }
+        _errorMessage = errorMsg;
         _isLoading = false;
       });
+      print('Error in _requestOTP: $e'); // Debug log
     }
   }
 

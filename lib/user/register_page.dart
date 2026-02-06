@@ -30,6 +30,20 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _hasValidated = false;
   Map<String, String?> _fieldErrors = {};
 
+  String _normalizePhMobile(String input) {
+    final digits = input.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return '';
+    // Accept +63xxxxxxxxxx or 63xxxxxxxxxx and normalize to 09xxxxxxxxx
+    if (digits.startsWith('63') && digits.length == 12) {
+      return '0${digits.substring(2)}';
+    }
+    // Accept 9xxxxxxxxx (10 digits) and normalize to 09xxxxxxxxx
+    if (digits.startsWith('9') && digits.length == 10) {
+      return '0$digits';
+    }
+    return digits;
+  }
+
   // Location state (Philippines: Province → City/Municipality → Barangay)
   List<Map<String, String>> _provinces = [];
   List<Map<String, String>> _cities = [];
@@ -178,7 +192,7 @@ class _RegisterPageState extends State<RegisterPage> {
     }
     // Philippine phone number validation: 09XXXXXXXXX (11 digits starting with 09)
     final phoneRegex = RegExp(r'^09\d{9}$');
-    String cleanNumber = value.replaceAll(RegExp(r'[\s\-\(\)]'), '');
+    String cleanNumber = _normalizePhMobile(value);
     if (!phoneRegex.hasMatch(cleanNumber)) {
       return 'Please enter a valid mobile number (09XXXXXXXXX)';
     }
@@ -429,7 +443,8 @@ class _RegisterPageState extends State<RegisterPage> {
     try {
       // Email is optional. If not provided, auto-generate placeholder for Firebase Auth.
       final emailInput = _emailController.text.trim();
-      final phoneInput = _phoneController.text.trim();
+      final phoneInputRaw = _phoneController.text.trim();
+      final phoneInput = _normalizePhMobile(phoneInputRaw);
       final emailForFirebase = emailInput.isNotEmpty
           ? emailInput
           : 'phone_${phoneInput.replaceAll(RegExp(r'[^\d]'), '')}@oinkcheck.local';
@@ -460,7 +475,10 @@ class _RegisterPageState extends State<RegisterPage> {
           // Combined address for display/search
           'address':
               '${_addressController.text.trim()}, $_selectedBarangayName, $_selectedCityName, $_selectedProvinceName',
+          // Store normalized phone format to avoid query mismatches (e.g., spaces/dashes)
           'phoneNumber': phoneInput,
+          // Keep raw input for debugging / display if needed
+          'phoneNumberRaw': phoneInputRaw,
           'email': emailInput.isNotEmpty ? emailInput : '', // Store empty if not provided
           'hasEmail': emailInput.isNotEmpty, // Flag to track if user has real email
           'role': 'farmer',
