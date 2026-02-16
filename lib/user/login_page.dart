@@ -28,14 +28,11 @@ class _LoginPageState extends State<LoginPage> {
 
   // Email/password only (Google sign-in removed).
 
-  // DEV convenience: prefill password to reduce switching friction.
-  // Remove before release.
-  static const String _defaultPassword = '@Sherwen24';
-
   String _normalizePhMobile(String input) {
     final digits = input.replaceAll(RegExp(r'\D'), '');
     if (digits.isEmpty) return '';
-    if (digits.startsWith('63') && digits.length == 12) return '0${digits.substring(2)}';
+    if (digits.startsWith('63') && digits.length == 12)
+      return '0${digits.substring(2)}';
     if (digits.startsWith('9') && digits.length == 10) return '0$digits';
     return digits;
   }
@@ -60,7 +57,7 @@ class _LoginPageState extends State<LoginPage> {
   @override
   void initState() {
     super.initState();
-    _passwordController.text = _defaultPassword;
+    // Do not pre-fill password in production for security reasons.
   }
 
   String _normalizeRole(dynamic role) {
@@ -112,21 +109,23 @@ class _LoginPageState extends State<LoginPage> {
         if (!_looksLikeEmail(identifier)) {
           final normalizedPhone = _normalizePhMobile(identifier);
           final e164Phone = _toPhE164(identifier);
-          final candidates = <String>{
-            normalizedPhone,
-            identifier.trim(),
-            e164Phone,
-            e164Phone.replaceAll('+', ''), // sometimes stored without +
-          }.where((s) => s.isNotEmpty).toList();
+          final candidates =
+              <String>{
+                normalizedPhone,
+                identifier.trim(),
+                e164Phone,
+                e164Phone.replaceAll('+', ''), // sometimes stored without +
+              }.where((s) => s.isNotEmpty).toList();
 
           QuerySnapshot usersQuery;
           QuerySnapshot? found;
           for (final candidate in candidates) {
-            usersQuery = await FirebaseFirestore.instance
-                .collection('users')
-                .where('phoneNumber', isEqualTo: candidate)
-                .limit(1)
-                .get();
+            usersQuery =
+                await FirebaseFirestore.instance
+                    .collection('users')
+                    .where('phoneNumber', isEqualTo: candidate)
+                    .limit(1)
+                    .get();
             if (usersQuery.docs.isNotEmpty) {
               found = usersQuery;
               break;
@@ -154,25 +153,28 @@ class _LoginPageState extends State<LoginPage> {
           final userDoc = resolvedQuery.docs.first;
           final data = userDoc.data() as Map<String, dynamic>;
           final realEmail = (data['email'] as String?)?.trim() ?? '';
-          final hasRealEmail = realEmail.isNotEmpty && !realEmail.endsWith('@oinkcheck.local');
+          final hasRealEmail =
+              realEmail.isNotEmpty && !realEmail.endsWith('@oinkcheck.local');
 
           // If they registered without email, Firebase Auth email is the placeholder: phone_<digits>@oinkcheck.local
           if (hasRealEmail) {
             emailForFirebase = realEmail;
           } else {
             // Try to build placeholder email from the best phone we have.
-            final phoneDigits = normalizedPhone.isNotEmpty
-                ? normalizedPhone.replaceAll(RegExp(r'\D'), '')
-                : identifier.replaceAll(RegExp(r'\D'), '');
+            final phoneDigits =
+                normalizedPhone.isNotEmpty
+                    ? normalizedPhone.replaceAll(RegExp(r'\D'), '')
+                    : identifier.replaceAll(RegExp(r'\D'), '');
             emailForFirebase = 'phone_${phoneDigits}@oinkcheck.local';
           }
         } else {
           // Email login: (keep existing behavior) ensure it exists in Firestore first
-          final usersQuery = await FirebaseFirestore.instance
-              .collection('users')
-              .where('email', isEqualTo: identifier)
-              .limit(1)
-              .get();
+          final usersQuery =
+              await FirebaseFirestore.instance
+                  .collection('users')
+                  .where('email', isEqualTo: identifier)
+                  .limit(1)
+                  .get();
           if (usersQuery.docs.isEmpty) {
             setState(() {
               _isLoading = false;
@@ -192,7 +194,10 @@ class _LoginPageState extends State<LoginPage> {
 
         // Now try to sign in with Firebase Auth (email/password). For phone-only users, this uses the placeholder email.
         UserCredential userCredential = await FirebaseAuth.instance
-            .signInWithEmailAndPassword(email: emailForFirebase, password: password);
+            .signInWithEmailAndPassword(
+              email: emailForFirebase,
+              password: password,
+            );
 
         final user = userCredential.user;
         if (user != null) {

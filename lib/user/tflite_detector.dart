@@ -23,6 +23,12 @@ class TFLiteDetector {
   List<String> _labels = [];
   int _modelClassCount = 0;
   int _inputSize = 640;
+  // Classes that should be ignored/treated as non-existent in UI.
+  // These labels will never be returned to the Farmer or ML Expert flows.
+  static const Set<String> _ignoredLabels = {
+    'dermatatis', // dermatitis-like
+    'pityriasis_rosea',
+  };
   // YOLO exports often need a lower threshold on mobile images.
   static const double confidenceThreshold = 0.35;
   static const double nmsThreshold =
@@ -254,8 +260,14 @@ class TFLiteDetector {
           '   - ${r.label}: ${(r.confidence * 100).toStringAsFixed(1)}% at ${r.boundingBox}',
         );
       }
+      // Filter out any classes that we no longer want to expose in the app.
+      final filteredResults = results
+          .where(
+            (r) => !_ignoredLabels.contains(r.label.toLowerCase().trim()),
+          )
+          .toList();
 
-      return results;
+      return filteredResults;
     } catch (e) {
       print('❌ Error during detection: $e');
       return [];
