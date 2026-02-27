@@ -34,8 +34,6 @@ class _TreatmentEditorPageState extends State<TreatmentEditorPage> {
     {'id': 'mange', 'name': 'Mange'},
     {'id': 'foot_and_mouth', 'name': 'Foot and Mouth Disease'},
     {'id': 'sunburn', 'name': 'Sunburn'},
-    {'id': 'dermatitis', 'name': 'Dermatitis'},
-    {'id': 'pityriasis_rosea', 'name': 'Pityriasis Rosea'},
   ];
 
   @override

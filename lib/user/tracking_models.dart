@@ -15,8 +15,6 @@ class TrackingModels {
     'infected_parasitic_mange',
     'infected_viral_foot_and_mouth',
     'swine_pox',
-    'dermatatis',
-    'pityriasis_rosea',
   ];
 
   static const List<Map<String, dynamic>> timeRanges = [

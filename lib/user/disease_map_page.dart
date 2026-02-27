@@ -29,8 +29,6 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     'infected_fungal_ringworm',
     'infected_parasitic_mange',
     'infected_viral_foot_and_mouth',
-    'dermatatis',
-    'pityriasis_rosea',
   ];
 
   String _canonicalDiseaseKey(String raw) {
@@ -230,41 +228,47 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
       final heatmapCircles = <CircleMarker>[];
       final invisibleMarkers = <Marker>[]; // For click interaction
 
+      // Calculate total cases for percentage calculation (once, before the loop)
+      final totalCases = agg.values.fold<int>(0, (sum, a) => sum + a.count);
+
       for (final a in agg.values) {
         if (a.lat == null || a.lng == null) continue;
         final count = a.count;
         if (count <= 0) continue;
 
-        // Calculate intensity based on thresholds (50+/25-49/0-24)
+        // Calculate percentage of total
+        final percentage = totalCases > 0 ? (count / totalCases * 100) : 0.0;
+
+        // Calculate intensity based on percentage thresholds (31+/11-30/0-10)
         double intensity; // 0.0 to 1.0 for color gradient
 
-        if (count < 25) {
-          // Low: 0-24 cases
-          // Normalize within low range: 0 cases = 0.0, 24 cases = 0.33
-          intensity = (count / 24.0) * 0.33;
-        } else if (count < 50) {
-          // Medium: 25-49 cases
-          // Normalize within medium range: 25 cases = 0.33, 49 cases = 0.67
-          intensity = 0.33 + ((count - 25) / 24.0) * 0.34;
+        if (percentage <= 10) {
+          // Low: 0-10%
+          // Normalize within low range: 0% = 0.0, 10% = 0.33
+          intensity = (percentage / 10.0) * 0.33;
+        } else if (percentage <= 30) {
+          // Medium: 11-30%
+          // Normalize within medium range: 11% = 0.33, 30% = 0.67
+          intensity = 0.33 + ((percentage - 10) / 20.0) * 0.34;
         } else {
-          // High: 50+ cases
-          // Normalize within high range: 50 cases = 0.67, scale up for higher counts
-          final excess = count - 50;
-          intensity = 0.67 + (math.min(excess / 50.0, 1.0) * 0.33);
+          // High: 31%+
+          // Normalize within high range: 31% = 0.67, scale up for higher percentages
+          final excess = percentage - 30;
+          intensity = 0.67 + (math.min(excess / 70.0, 1.0) * 0.33);
         }
 
-        // Calculate circle size based on count category
+        // Calculate circle size based on percentage category
         double radius;
-        if (count < 25) {
+        if (percentage <= 10) {
           // Low: 500m to 1.5km
-          radius = 500.0 + ((count / 24.0) * 1000.0);
-        } else if (count < 50) {
+          radius = 500.0 + ((percentage / 10.0) * 1000.0);
+        } else if (percentage <= 30) {
           // Medium: 1.5km to 3km
-          radius = 1500.0 + (((count - 25) / 24.0) * 1500.0);
+          radius = 1500.0 + (((percentage - 10) / 20.0) * 1500.0);
         } else {
           // High: 3km to 5km (capped)
-          final excess = count - 50;
-          radius = 3000.0 + (math.min(excess / 50.0, 1.0) * 2000.0);
+          final excess = percentage - 30;
+          radius = 3000.0 + (math.min(excess / 70.0, 1.0) * 2000.0);
         }
 
         // Get heatmap color based on intensity
@@ -318,6 +322,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                 _showMarkerInfo(
                   a.diseaseKey,
                   count,
+                  percentage: percentage,
                   barangay: a.barangay,
                   city: a.city,
                   province: a.province,
@@ -352,6 +357,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
   void _showMarkerInfo(
     String diseaseKey,
     int count, {
+    required double percentage,
     required String barangay,
     required String city,
     required String province,
@@ -362,7 +368,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
           (context) => AlertDialog(
             title: Text(PigDiseaseUI.displayName(diseaseKey)),
             content: Text(
-              'Location: $barangay, $city, $province\nCases: $count\nSeverity: ${_getSeverityLabel(count)}',
+              'Location: $barangay, $city, $province\nCases: $count (${percentage.toStringAsFixed(1)}%)\nSeverity: ${_getSeverityLabel(percentage)}',
               style: const TextStyle(fontSize: 16),
             ),
             actions: [
@@ -375,15 +381,15 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     );
   }
 
-  String _getSeverityLabel(int count) {
-    if (count >= 50) return 'High';
-    if (count >= 25) return 'Medium';
+  String _getSeverityLabel(double percentage) {
+    if (percentage > 30) return 'High';
+    if (percentage > 10) return 'Medium';
     return 'Low';
   }
 
   /// Get heatmap color based on intensity (0.0 to 1.0)
   /// Returns gradient from green (low) -> yellow (medium) -> red (high)
-  /// Thresholds: Low (0-24), Medium (25-49), High (50+)
+  /// Thresholds: Low (10% below), Medium (11% to 30%), High (31% and above)
   Color _getHeatmapColor(double intensity) {
     if (intensity <= 0.0) return const Color(0xFF4CAF50); // Green
     if (intensity >= 1.0) return const Color(0xFFF44336); // Red
@@ -403,7 +409,9 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
       )!;
     } else if (intensity < mediumThreshold) {
       // Medium: Light Green to Yellow (0.33 to 0.67)
-      final t = (intensity - lowThreshold) / (mediumThreshold - lowThreshold); // Scale to 0.0-1.0
+      final t =
+          (intensity - lowThreshold) /
+          (mediumThreshold - lowThreshold); // Scale to 0.0-1.0
       return Color.lerp(
         const Color(0xFF8BC34A), // Light Green
         const Color(0xFFFFEB3B), // Yellow
@@ -411,7 +419,9 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
       )!;
     } else {
       // High: Yellow to Red (0.67 to 1.0)
-      final t = (intensity - mediumThreshold) / (1.0 - mediumThreshold); // Scale to 0.0-1.0
+      final t =
+          (intensity - mediumThreshold) /
+          (1.0 - mediumThreshold); // Scale to 0.0-1.0
       return Color.lerp(
         const Color(0xFFFFEB3B), // Yellow
         const Color(0xFFF44336), // Red
@@ -457,7 +467,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                           children: [
                             Expanded(
                               child: Text(
-                                'Heatmap intensity = Number of completed reports • Thresholds: Low (0-24) | Medium (25-49) | High (50+)',
+                                'Heatmap intensity = Number of completed reports • Thresholds: Low (10% below) | Medium (11% to 30%) | High (31% and above)',
                                 style: TextStyle(
                                   color: Colors.grey[700],
                                   fontSize: 12,
