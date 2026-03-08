@@ -54,10 +54,15 @@
     </application>
 
     <!-- Queries required for handling text processing, used by Flutter engine -->
+    <!-- Queries for url_launcher (e.g. open update APK link in browser) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
         </intent>
     </queries>
 

@@ -12,10 +12,7 @@ class AboutAppPage extends StatelessWidget {
         elevation: 0,
         title: const Text(
           'About OinkCheck',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.bold,
-          ),
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.white),
@@ -69,7 +66,7 @@ class AboutAppPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 40),
-                
+
                 // Main Description
                 Container(
                   padding: const EdgeInsets.all(20),
@@ -132,9 +129,9 @@ class AboutAppPage extends StatelessWidget {
                     ],
                   ),
                 ),
-                
+
                 const SizedBox(height: 32),
-                
+
                 // Key Features
                 const Text(
                   'Key Features',
@@ -145,35 +142,40 @@ class AboutAppPage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 16),
-                
+
                 _buildFeatureItem(
                   icon: Icons.camera_alt,
                   title: 'AI-Powered Detection',
-                  description: 'Advanced CNN technology for accurate pig disease identification from skin images.',
+                  description:
+                      'Advanced CNN technology for accurate pig disease identification from skin images.',
                 ),
                 _buildFeatureItem(
                   icon: Icons.verified_user,
                   title: 'Expert Validation',
-                  description: 'Professional veterinary experts review and validate disease diagnoses.',
+                  description:
+                      'Professional veterinary experts review and validate disease diagnoses.',
                 ),
                 _buildFeatureItem(
                   icon: Icons.medical_services,
                   title: 'Treatment Recommendations',
-                  description: 'Localized treatment plans tailored for backyard farming conditions.',
+                  description:
+                      'Localized treatment plans tailored for backyard farming conditions.',
                 ),
                 _buildFeatureItem(
                   icon: Icons.map,
                   title: 'Disease Surveillance',
-                  description: 'Track disease outbreaks and hotspots in your region.',
+                  description:
+                      'Track disease outbreaks and hotspots in your region.',
                 ),
                 _buildFeatureItem(
                   icon: Icons.speed,
                   title: 'Rapid Results',
-                  description: 'Get preliminary disease identification in seconds.',
+                  description:
+                      'Get preliminary disease identification in seconds.',
                 ),
-                
+
                 const SizedBox(height: 40),
-                
+
                 // Version Info
                 Center(
                   child: Column(
@@ -253,5 +255,4 @@ class AboutAppPage extends StatelessWidget {
       ),
     );
   }
-
 }

@@ -16,6 +16,7 @@ import 'expert_chat_inbox_page.dart';
 import '../head_veterinarian/vet_manage_treatments_page.dart';
 import 'expert_notifications_page.dart';
 import '../shared/notification_service.dart';
+import '../shared/profile_update_notifier.dart';
 
 class ExpertDashboard extends StatefulWidget {
   const ExpertDashboard({Key? key, this.treatmentsPageOverride})
@@ -236,11 +237,11 @@ class _ExpertDashboardState extends State<ExpertDashboard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    FutureBuilder<Map<String, dynamic>?>(
-                      future: _loadExpertProfile(),
-                      builder: (context, snapshot) {
-                        final expertName =
-                            snapshot.data?['fullName'] ?? 'Expert';
+                    ListenableBuilder(
+                      listenable: ProfileUpdateNotifier.instance,
+                      builder: (context, _) {
+                        final p = Hive.box('userBox').get('userProfile');
+                        final expertName = (p is Map ? p['fullName'] : null)?.toString() ?? 'Expert';
                         final firstName = expertName.split(' ').first;
 
                         return Row(

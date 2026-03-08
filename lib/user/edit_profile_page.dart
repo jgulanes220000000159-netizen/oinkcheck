@@ -3,11 +3,13 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:mime/mime.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import '../shared/geocoding_service.dart';
 import '../shared/davao_del_norte_locations.dart';
+import '../shared/profile_update_notifier.dart';
 
 class EditProfilePage extends StatefulWidget {
   const EditProfilePage({Key? key}) : super(key: key);
@@ -43,8 +45,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   void initState() {
     super.initState();
-    _loadLocations();
-    _loadUserData();
+    // Load location lists first, then user data so saved city/barangay can be restored
+    _loadLocations().then((_) => _loadUserData());
   }
 
   Future<void> _loadUserData() async {
@@ -110,6 +112,8 @@ class _EditProfilePageState extends State<EditProfilePage> {
 
             _isLoadingData = false;
           });
+          // Repopulate city/barangay dropdowns so saved selection is visible
+          if (_selectedCityName != null) _loadCitiesForProvince();
         }
       }
     } catch (e) {
@@ -417,6 +421,28 @@ class _EditProfilePageState extends State<EditProfilePage> {
           // Ignore geocode errors to allow profile save to succeed
           debugPrint('Geocode skipped on profile save: $e');
         }
+
+        // Keep local Hive cache in sync so dashboard/header show updated name
+        try {
+          final box = await Hive.openBox('userBox');
+          final current = box.get('userProfile');
+          final Map<String, dynamic> updated = current is Map
+              ? Map<String, dynamic>.from(current)
+              : <String, dynamic>{};
+          updated['fullName'] = fullName;
+          updated['firstName'] = firstName;
+          updated['lastName'] = lastName;
+          updated['street'] = street;
+          updated['province'] = province;
+          updated['cityMunicipality'] = city;
+          updated['barangay'] = barangay;
+          updated['address'] = combinedAddress;
+          updated['phoneNumber'] = _phoneController.text.trim();
+          updated['email'] = _emailController.text.trim();
+          if (newImageUrl != null) updated['imageProfile'] = newImageUrl;
+          await box.put('userProfile', updated);
+          ProfileUpdateNotifier.instance.notifyProfileUpdated();
+        } catch (_) {}
 
         setState(() {
           _isLoading = false;

@@ -1095,13 +1095,14 @@ class _ProfilePageState extends State<ProfilePage> {
                           _buildProfileOption(
                             title: tr('edit_profile'),
                             icon: Icons.edit,
-                            onTap: () {
-                              Navigator.push(
+                            onTap: () async {
+                              await Navigator.push(
                                 context,
                                 MaterialPageRoute(
                                   builder: (context) => const EditProfilePage(),
                                 ),
                               );
+                              if (mounted) await _loadUserData();
                             },
                           ),
                           _buildProfileOption(

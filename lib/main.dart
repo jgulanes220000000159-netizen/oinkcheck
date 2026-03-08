@@ -16,6 +16,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter/services.dart';
+import 'shared/app_update_checker.dart';
 import 'shared/connectivity_service.dart';
 import 'shared/no_internet_banner.dart';
 import 'package:month_year_picker/month_year_picker.dart';
@@ -485,7 +486,7 @@ class CapstoneApp extends StatelessWidget {
               body: Center(child: CircularProgressIndicator()),
             );
           }
-          return snapshot.data!;
+          return AppUpdateChecker(child: snapshot.data!);
         },
       ),
       routes: {

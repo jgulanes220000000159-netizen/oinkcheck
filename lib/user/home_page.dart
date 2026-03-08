@@ -25,6 +25,7 @@ import 'diseases_page.dart';
 import 'disease_map_page.dart';
 import '../shared/notifications_page.dart';
 import '../shared/notification_service.dart';
+import '../shared/profile_update_notifier.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -1846,15 +1847,20 @@ class _HomePageState extends State<HomePage> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          _isLoading
-                              ? 'Hello - Loading...'
-                              : 'Hello - $_userName',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        ListenableBuilder(
+                          listenable: ProfileUpdateNotifier.instance,
+                          builder: (context, _) {
+                            final p = Hive.box('userBox').get('userProfile');
+                            final name = (p is Map ? p['fullName'] : null)?.toString() ?? _userName;
+                            return Text(
+                              _isLoading ? 'Hello - Loading...' : 'Hello - $name',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            );
+                          },
                         ),
                         GestureDetector(
                           onTap: () {
@@ -1863,7 +1869,9 @@ class _HomePageState extends State<HomePage> {
                               MaterialPageRoute(
                                 builder: (context) => const ProfilePage(),
                               ),
-                            );
+                            ).then((_) {
+                              if (mounted) _loadUserData();
+                            });
                           },
                           child: FutureBuilder<Map<String, dynamic>?>(
                             future: _loadUserProfileForHeader(),

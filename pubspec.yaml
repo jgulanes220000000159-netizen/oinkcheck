@@ -2,7 +2,7 @@ name: capstone
 description: "A new Flutter project."
 publish_to: "none" # Keep it as none for private apps
 
-version: 1.0.0+1
+version: 1.0.2+3
 
 environment:
   sdk: ^3.7.2
@@ -38,6 +38,8 @@ dependencies:
   month_year_picker: ^0.4.0
   lottie: ^3.0.0
   http: ^1.2.0
+  package_info_plus: ^8.0.0
+  url_launcher: ^6.2.0
   flutter_map: ^6.1.0
   latlong2: ^0.9.0
   flutter_local_notifications:
@@ -82,6 +84,7 @@ flutter:
     - assets/ph_locations.json
     - assets/davao_del_norte_locations.json
     - .env
+    - assets/MODEL_GRAPHS/
     # Add any other image or asset files here
     # - assets/images/your_image.jpg
 
