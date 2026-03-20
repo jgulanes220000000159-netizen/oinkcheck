@@ -20,7 +20,7 @@ class ReviewManager {
         {'path': 'assets/sample1.jpg', 'detections': []},
       ],
       'diseaseSummary': [
-        {'disease': 'Anthracnose', 'averageConfidence': 0.92},
+        {'disease': 'Ringworm', 'averageConfidence': 0.92},
       ],
       'notes': 'Leaf spots observed.',
     },

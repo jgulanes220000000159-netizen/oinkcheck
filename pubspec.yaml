@@ -2,7 +2,7 @@ name: capstone
 description: "A new Flutter project."
 publish_to: "none" # Keep it as none for private apps
 
-version: 1.0.2+3
+version: 1.0.4+5
 
 environment:
   sdk: ^3.7.2

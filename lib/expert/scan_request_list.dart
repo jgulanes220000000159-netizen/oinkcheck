@@ -230,7 +230,7 @@ class _ScanRequestListState extends State<ScanRequestList>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Text(
-              'Try searching for: "Anthracnose", "John", or "2024-06-10"',
+              'Try searching for: "Ringworm", "Swine Pox", or "2024-06-10"',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey[600],

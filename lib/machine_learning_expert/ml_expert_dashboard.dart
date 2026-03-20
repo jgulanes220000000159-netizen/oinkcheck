@@ -283,7 +283,16 @@ class _MLExpertHomePage extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 8),
-            // Three equal-sized cards in a grid
+            // --- Section: Quick actions (division with label) ---
+            Text(
+              'Quick actions',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Colors.grey[800],
+              ),
+            ),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
@@ -315,15 +324,18 @@ class _MLExpertHomePage extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 24),
+            const Divider(height: 1, color: Colors.grey),
+            const SizedBox(height: 16),
+            // --- Section: What you can do (division with label) ---
             Text(
               'What you can do',
               style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
                 color: Colors.grey[800],
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
@@ -358,6 +370,18 @@ class _MLExpertHomePage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 24),
+            const Divider(height: 1, color: Colors.grey),
+            const SizedBox(height: 16),
+            // --- Section: Model performance (division with label) ---
+            Text(
+              'Model performance',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: Colors.grey[800],
+              ),
+            ),
+            const SizedBox(height: 10),
             const _ModelComparisonSection(),
           ],
         ),
@@ -483,27 +507,60 @@ class _ModelComparisonSection extends StatelessWidget {
           'training logs and summarise how each model performs on the validation set.',
           style: TextStyle(color: Colors.grey[700], fontSize: 13, height: 1.3),
         ),
-        const SizedBox(height: 12),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _ModelGraphCard(
-                title: 'YOLOv12',
-                assetPath: 'assets/MODEL_GRAPHS/YOLO_GRAPH.png',
-              ),
-              _ModelGraphCard(
-                title: 'Faster R-CNN',
-                assetPath: 'assets/MODEL_GRAPHS/FAST_R_GRAPH.png',
-              ),
-              _ModelGraphCard(
-                title: 'SSD',
-                assetPath: 'assets/MODEL_GRAPHS/SSD_GRAPH.png',
-              ),
-            ],
+        const SizedBox(height: 16),
+        // Emphasized training curves: label + container + larger graphs
+        Text(
+          'Training curves',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            color: Colors.grey[800],
           ),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _ModelGraphCard(
+                  title: 'YOLOv12',
+                  slidePaths: [
+                    'assets/MODEL_GRAPHS/YOLOTV.png',
+                    'assets/MODEL_GRAPHS/YOLOMAP.png',
+                    'assets/MODEL_GRAPHS/YOLOPR.png',
+                    'assets/MODEL_GRAPHS/YOLO_GRAPH.png',
+                  ],
+                ),
+                _ModelGraphCard(
+                  title: 'Faster R-CNN',
+                  slidePaths: [
+                    'assets/MODEL_GRAPHS/FASTTV.png',
+                    'assets/MODEL_GRAPHS/FASTMAP.png',
+                    'assets/MODEL_GRAPHS/FASTPR.png',
+                    'assets/MODEL_GRAPHS/FAST_R_GRAPH.png',
+                  ],
+                ),
+                _ModelGraphCard(
+                  title: 'SSD',
+                  slidePaths: [
+                    'assets/MODEL_GRAPHS/SSDTV.png',
+                    'assets/MODEL_GRAPHS/SSDMAP.png',
+                    'assets/MODEL_GRAPHS/SSDPR.png',
+                    'assets/MODEL_GRAPHS/SSD_GRAPH.png',
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
         Container(
           decoration: BoxDecoration(
             color: Colors.white,
@@ -564,15 +621,16 @@ class _ModelComparisonSection extends StatelessWidget {
                         ],
                       ],
                     );
+                    const boldStyle = TextStyle(fontSize: 12, fontWeight: FontWeight.bold);
                     return DataRow(
                       cells: [
                         DataCell(Text('#$rank')),
                         DataCell(modelWidget),
-                        DataCell(Text(r.precision.toStringAsFixed(4))),
-                        DataCell(Text(r.recall.toStringAsFixed(4))),
-                        DataCell(Text(r.f1.toStringAsFixed(4))),
-                        DataCell(Text(r.map50.toStringAsFixed(4))),
-                        DataCell(Text(r.map75.toStringAsFixed(4))),
+                        DataCell(Text(r.precision.toStringAsFixed(4), style: boldStyle)),
+                        DataCell(Text(r.recall.toStringAsFixed(4), style: boldStyle)),
+                        DataCell(Text(r.f1.toStringAsFixed(4), style: boldStyle)),
+                        DataCell(Text(r.map50.toStringAsFixed(4), style: boldStyle)),
+                        DataCell(Text(r.map75.toStringAsFixed(4), style: boldStyle)),
                       ],
                     );
                   }).toList(),
@@ -580,15 +638,19 @@ class _ModelComparisonSection extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Text(
-          'Overall, YOLOv12 achieved the strongest detection performance, with the highest precision '
-          '(0.9103 ), recall (0.8773 ), F1 score (0.8935) and mAP scores. Faster R-CNN performs '
-          'second best and SSD trails behind, which is consistent with the more modern architecture '
-          'and capacity of YOLOv12 on this dataset.',
-          style: TextStyle(
-            color: Colors.grey[700],
-            fontSize: 12.5,
-            height: 1.35,
+        RichText(
+          text: TextSpan(
+            style: TextStyle(
+              color: Colors.grey[700],
+              fontSize: 12.5,
+              height: 1.35,
+              fontWeight: FontWeight.normal,
+            ),
+            children: [
+              const TextSpan(text: 'Overall, YOLOv12 achieved the strongest detection performance, with the highest '),
+              TextSpan(text: 'precision (0.9103), recall (0.8773), F1 score (0.8935)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey[800])),
+              const TextSpan(text: ' and mAP scores. Faster R-CNN performs second best and SSD trails behind, which is consistent with the more modern architecture and capacity of YOLOv12 on this dataset.'),
+            ],
           ),
         ),
       ],
@@ -596,44 +658,59 @@ class _ModelComparisonSection extends StatelessWidget {
   }
 }
 
+/// Slide labels for the 4 graphs: Train/Val, mAP, Precision/Recall, Overview.
+const List<String> _kGraphSlideLabels = [
+  'Train & validation loss',
+  'Mean average precision (mAP)',
+  'Precision & recall',
+  'Overview (all metrics)',
+];
+
 class _ModelGraphCard extends StatelessWidget {
-  const _ModelGraphCard({required this.title, required this.assetPath});
+  const _ModelGraphCard({
+    required this.title,
+    required this.slidePaths,
+  });
 
   final String title;
-  final String assetPath;
+  /// Four image paths: [TV, MAP, PR, composite]
+  final List<String> slidePaths;
 
   @override
   Widget build(BuildContext context) {
+    // Front view: show mAP graph (slide 2) for each model
+    final thumbnailPath = slidePaths.length >= 2 ? slidePaths[1] : slidePaths.first;
     return Container(
-      width: 220,
-      margin: const EdgeInsets.only(right: 12),
+      width: 300,
+      margin: const EdgeInsets.only(right: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const Icon(Icons.open_in_full, size: 14, color: Colors.black54),
+                const Icon(Icons.open_in_full, size: 16, color: Colors.black54),
               ],
             ),
           ),
@@ -641,11 +718,10 @@ class _ModelGraphCard extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(
-                  builder:
-                      (_) => _ModelGraphFullScreenPage(
-                        title: title,
-                        assetPath: assetPath,
-                      ),
+                  builder: (_) => _ModelGraphSlidesPage(
+                    title: title,
+                    slidePaths: slidePaths,
+                  ),
                 ),
               );
             },
@@ -655,9 +731,137 @@ class _ModelGraphCard extends StatelessWidget {
                 bottomRight: Radius.circular(12),
               ),
               child: AspectRatio(
-                aspectRatio: 4 / 3,
-                child: Image.asset(assetPath, fit: BoxFit.cover),
+                aspectRatio: 3 / 2,
+                child: Image.asset(thumbnailPath, fit: BoxFit.cover),
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ModelGraphSlidesPage extends StatefulWidget {
+  const _ModelGraphSlidesPage({
+    required this.title,
+    required this.slidePaths,
+  });
+
+  final String title;
+  final List<String> slidePaths;
+
+  @override
+  State<_ModelGraphSlidesPage> createState() => _ModelGraphSlidesPageState();
+}
+
+class _ModelGraphSlidesPageState extends State<_ModelGraphSlidesPage> {
+  final PageController _pageController = PageController();
+  int _currentPage = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final paths = widget.slidePaths;
+    final count = paths.length;
+    return Scaffold(
+      backgroundColor: Colors.grey[900],
+      appBar: AppBar(
+        backgroundColor: Colors.grey[900],
+        foregroundColor: Colors.white,
+        title: Text(widget.title),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: PageView.builder(
+              controller: _pageController,
+              onPageChanged: (i) => setState(() => _currentPage = i),
+              itemCount: count,
+              itemBuilder: (context, index) {
+                final path = paths[index];
+                final label = index < _kGraphSlideLabels.length
+                    ? _kGraphSlideLabels[index]
+                    : '${index + 1} of $count';
+                final isLastSlide = index == count - 1;
+                return GestureDetector(
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => _ModelGraphFullScreenPage(
+                          title: '${widget.title} – $label',
+                          assetPath: path,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    child: Column(
+                      children: [
+                        Text(
+                          label,
+                          style: const TextStyle(
+                            color: Colors.white70,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Expanded(
+                          child: isLastSlide
+                              ? InteractiveViewer(
+                                  minScale: 0.5,
+                                  maxScale: 4,
+                                  child: RotatedBox(
+                                    quarterTurns: 1,
+                                    child: Image.asset(path, fit: BoxFit.contain),
+                                  ),
+                                )
+                              : Image.asset(path, fit: BoxFit.contain),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 24, top: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  '${_currentPage + 1} of $count',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(width: 16),
+                ...List.generate(count, (i) {
+                  final selected = i == _currentPage;
+                  return GestureDetector(
+                    onTap: () => _pageController.animateToPage(
+                      i,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                    ),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: selected ? 10 : 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: selected ? Colors.white : Colors.white38,
+                      ),
+                    ),
+                  );
+                }),
+              ],
             ),
           ),
         ],

@@ -21,6 +21,7 @@ import 'shared/connectivity_service.dart';
 import 'shared/no_internet_banner.dart';
 import 'package:month_year_picker/month_year_picker.dart';
 import 'machine_learning_expert/ml_expert_dashboard.dart';
+import 'developer/developer_dashboard.dart';
 
 void main() {
   runZonedGuarded(
@@ -304,9 +305,11 @@ class CapstoneApp extends StatelessWidget {
         normalizedRole == 'ml_expert' ||
         normalizedRole == 'ml expert') {
       return const MachineLearningExpertDashboard();
-    } else {
-      return const HomePage();
     }
+    if (normalizedRole == 'developer') {
+      return const DeveloperDashboard();
+    }
+    return const HomePage();
   }
 
   void _setupFCM(BuildContext context) async {

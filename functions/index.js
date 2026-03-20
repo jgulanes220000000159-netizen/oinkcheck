@@ -34,6 +34,17 @@ const twilioPhoneNumber = defineString("TWILIO_PHONE_NUMBER", {
   default: "",
 });
 
+// Developer email (receives ML Expert messages; replying goes to ML Expert's email)
+const developerEmail = defineString("DEVELOPER_EMAIL", {
+  default: "jgulanes_220000000159@uic.edu.ph",
+});
+
+// If set, use Firebase "Trigger Email from Firestore" extension.
+// This should match the extension's "Email documents collection" (e.g. "mail").
+const triggerEmailCollection = defineString("TRIGGER_EMAIL_COLLECTION", {
+  default: "",
+});
+
 // Function to get transporter (lazy initialization to avoid calling .value() at module level)
 function getTransporter() {
   return nodemailer.createTransport({
@@ -46,7 +57,7 @@ function getTransporter() {
 }
 
 // Function to send email notification
-async function sendEmailNotification(to, subject, htmlContent) {
+async function sendEmailNotification(to, subject, htmlContent, options = {}) {
   try {
     const transporter = getTransporter();
     const mailOptions = {
@@ -54,6 +65,7 @@ async function sendEmailNotification(to, subject, htmlContent) {
       to: to,
       subject: subject,
       html: htmlContent,
+      ...(options.replyTo && { replyTo: options.replyTo }),
     };
 
     const result = await transporter.sendMail(mailOptions);
@@ -412,6 +424,60 @@ exports.notifyUserOnApproval = functions.firestore
       );
     }
 
+    return null;
+  });
+
+// Trigger: When ML Expert sends a message → email developer (Reply-To = ML Expert so reply goes to their inbox).
+// Uses Firebase "Trigger Email" extension if TRIGGER_EMAIL_COLLECTION is set; otherwise uses Nodemailer (Gmail).
+exports.emailDeveloperOnMLMessage = functions.firestore
+  .document("ml_developer_messages/{messageId}")
+  .onCreate(async (snap, context) => {
+    const data = snap.data() || {};
+    const fromName = data.fromName || "An ML Expert";
+    const fromEmail = (data.fromEmail || "").toString().trim();
+    const message = (data.message || "").toString().trim();
+    const to = developerEmail.value();
+    if (!to) {
+      console.warn("DEVELOPER_EMAIL not set; skipping ML message email");
+      return null;
+    }
+    const subject = `OinkCheck: New message from ${fromName}`;
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;line-height:1.6;color:#333;}</style></head>
+      <body>
+        <p><strong>${fromName}</strong> sent you a message from the OinkCheck app (ML Expert – Contact developer).</p>
+        <hr/>
+        <p>${message.replace(/\n/g, "<br/>")}</p>
+        <hr/>
+        <p><strong>Reply to this email to respond to ${fromName}.</strong> Your reply will go to their email inbox.</p>
+        <p><small>OinkCheck – Developer</small></p>
+      </body>
+      </html>
+    `;
+
+    const collectionName = (triggerEmailCollection.value() || "").trim();
+    if (collectionName) {
+      // Use Firebase Trigger Email extension: write a doc to the extension's collection.
+      const mailDoc = {
+        to: to,
+        message: { subject, html: htmlContent },
+      };
+      if (fromEmail) mailDoc.replyTo = fromEmail;
+      await db.collection(collectionName).add(mailDoc);
+      console.log(`ML message queued for Trigger Email (replyTo: ${fromEmail || "none"})`);
+    } else {
+      // Fallback: send via Nodemailer (Gmail App Password required).
+      const result = await sendEmailNotification(to, subject, htmlContent, {
+        replyTo: fromEmail || undefined,
+      });
+      if (result.success) {
+        console.log(`ML message forwarded to developer (replyTo: ${fromEmail || "none"})`);
+      } else {
+        console.error("Failed to email developer:", result.error);
+      }
+    }
     return null;
   });
 

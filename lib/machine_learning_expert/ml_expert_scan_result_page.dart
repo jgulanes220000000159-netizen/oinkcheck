@@ -231,11 +231,12 @@ class _MLExpertScanResultPageState extends State<MLExpertScanResultPage> {
         foregroundColor: Colors.white,
         title: const Text('Scan Result'),
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             Row(
               children: [
                 const Expanded(
@@ -442,6 +443,7 @@ class _MLExpertScanResultPageState extends State<MLExpertScanResultPage> {
               ),
             ),
           ],
+        ),
         ),
       ),
     );
