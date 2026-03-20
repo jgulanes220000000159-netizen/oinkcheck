@@ -84,7 +84,7 @@ class TFLiteDetector {
               .map((e) => e.trim())
               .where((e) => e.isNotEmpty && e.toLowerCase() != 'place')
               .toList();
-      _interpreter = await Interpreter.fromAsset('assets/yolomodel.tflite');
+      _interpreter = await Interpreter.fromAsset('assets/yolocvc.tflite');
 
       final inTensor = _interpreter!.getInputTensor(0);
       final outTensor = _interpreter!.getOutputTensor(0);
@@ -261,11 +261,12 @@ class TFLiteDetector {
         );
       }
       // Filter out any classes that we no longer want to expose in the app.
-      final filteredResults = results
-          .where(
-            (r) => !_ignoredLabels.contains(r.label.toLowerCase().trim()),
-          )
-          .toList();
+      final filteredResults =
+          results
+              .where(
+                (r) => !_ignoredLabels.contains(r.label.toLowerCase().trim()),
+              )
+              .toList();
 
       return filteredResults;
     } catch (e) {

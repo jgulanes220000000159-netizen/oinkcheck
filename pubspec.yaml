@@ -70,7 +70,7 @@ flutter:
 
   assets:
     - assets/labels.txt
-    - assets/yolomodel.tflite
+    - assets/yolocvc.tflite
     - assets/logo.png
     - assets/applogo.png
     - assets/applogo_header.png
