@@ -101,10 +101,7 @@ class _RegisterPageState extends State<RegisterPage> {
       final provinceName = province['name']?.toString() ?? 'Davao del Norte';
       setState(() {
         _provinces = [
-          {
-            'code': province['code']?.toString() ?? '',
-            'name': provinceName,
-          }
+          {'code': province['code']?.toString() ?? '', 'name': provinceName},
         ];
         _selectedProvinceName = provinceName; // Use exact same string
       });
@@ -120,19 +117,22 @@ class _RegisterPageState extends State<RegisterPage> {
       _selectedCityName = null;
       _selectedBarangayName = null;
     });
-    
+
     final cities = DavaoDelNorteLocations.getCities();
     setState(() {
-      _cities = cities
-          .map<Map<String, String>>(
-            (c) => {
-              'code': c['code']?.toString() ?? '',
-              'name': c['name']?.toString() ?? '',
-            },
-          )
-          .toList();
+      _cities =
+          cities
+              .map<Map<String, String>>(
+                (c) => {
+                  'code': c['code']?.toString() ?? '',
+                  'name': c['name']?.toString() ?? '',
+                },
+              )
+              .toList();
     });
-    print('✅ Loaded ${_cities.length} cities/municipalities for Davao del Norte');
+    print(
+      '✅ Loaded ${_cities.length} cities/municipalities for Davao del Norte',
+    );
   }
 
   Future<void> _loadBarangaysForCity(String cityCode) async {
@@ -140,17 +140,18 @@ class _RegisterPageState extends State<RegisterPage> {
       _barangays = [];
       _selectedBarangayName = null;
     });
-    
+
     final barangays = DavaoDelNorteLocations.getBarangaysForCity(cityCode);
     setState(() {
-      _barangays = barangays
-          .map<Map<String, String>>(
-            (b) => {
-              'code': b['code']?.toString() ?? '',
-              'name': b['name']?.toString() ?? '',
-            },
-          )
-          .toList();
+      _barangays =
+          barangays
+              .map<Map<String, String>>(
+                (b) => {
+                  'code': b['code']?.toString() ?? '',
+                  'name': b['name']?.toString() ?? '',
+                },
+              )
+              .toList();
     });
     print('✅ Loaded ${_barangays.length} barangays for city code $cityCode');
   }
@@ -240,7 +241,10 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   // --- Location verification (City/Municipality) ---
-  static const double _maxCityDistanceMeters = 20000; // 20km (centroid fallback)
+  /// Set to `true` to require GPS / reverse-geocode match with selected city.
+  static const bool _verifyLocationOnRegister = true;
+  static const double _maxCityDistanceMeters =
+      20000; // 20km (centroid fallback)
   static const double _maxAcceptableAccuracyMeters = 1500;
 
   String _normalizeCityName(String s) {
@@ -309,6 +313,8 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<bool> _verifyUserIsInSelectedCity() async {
+    if (!_verifyLocationOnRegister) return true;
+
     // Require selection first (existing validation also checks this).
     final selectedCity = _selectedCityName?.trim();
     if (selectedCity == null || selectedCity.isEmpty) return false;
@@ -348,11 +354,10 @@ class _RegisterPageState extends State<RegisterPage> {
 
     // Prefer reverse-geocoding city name (more accurate than centroid distance).
     try {
-      final detected =
-          await GeocodingService().reverseCityMunicipality(
-            lat: pos.latitude,
-            lng: pos.longitude,
-          );
+      final detected = await GeocodingService().reverseCityMunicipality(
+        lat: pos.latitude,
+        lng: pos.longitude,
+      );
       if (detected != null && detected.trim().isNotEmpty) {
         final sel = _normalizeCityName(selectedCity);
         final det = _normalizeCityName(detected);
@@ -445,10 +450,11 @@ class _RegisterPageState extends State<RegisterPage> {
       final emailInput = _emailController.text.trim();
       final phoneInputRaw = _phoneController.text.trim();
       final phoneInput = _normalizePhMobile(phoneInputRaw);
-      final emailForFirebase = emailInput.isNotEmpty
-          ? emailInput
-          : 'phone_${phoneInput.replaceAll(RegExp(r'[^\d]'), '')}@oinkcheck.local';
-      
+      final emailForFirebase =
+          emailInput.isNotEmpty
+              ? emailInput
+              : 'phone_${phoneInput.replaceAll(RegExp(r'[^\d]'), '')}@oinkcheck.local';
+
       // Create user with Firebase Auth
       UserCredential userCredential = await FirebaseAuth.instance
           .createUserWithEmailAndPassword(
@@ -479,8 +485,12 @@ class _RegisterPageState extends State<RegisterPage> {
           'phoneNumber': phoneInput,
           // Keep raw input for debugging / display if needed
           'phoneNumberRaw': phoneInputRaw,
-          'email': emailInput.isNotEmpty ? emailInput : '', // Store empty if not provided
-          'hasEmail': emailInput.isNotEmpty, // Flag to track if user has real email
+          'email':
+              emailInput.isNotEmpty
+                  ? emailInput
+                  : '', // Store empty if not provided
+          'hasEmail':
+              emailInput.isNotEmpty, // Flag to track if user has real email
           'role': 'farmer',
           'status': 'active',
           'imageProfile': '',
@@ -732,12 +742,12 @@ class _RegisterPageState extends State<RegisterPage> {
                   });
                   Navigator.of(context).pop();
                 },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
                 child: Text('I Accept', style: TextStyle(color: Colors.white)),
               ),
             ],
@@ -793,11 +803,13 @@ class _RegisterPageState extends State<RegisterPage> {
     );
 
     bool hasErr(String key) =>
-        _hasValidated && (_fieldErrors[key] != null && _fieldErrors[key]!.isNotEmpty);
+        _hasValidated &&
+        (_fieldErrors[key] != null && _fieldErrors[key]!.isNotEmpty);
 
     Widget err(String key) {
       final msg = _fieldErrors[key];
-      if (!_hasValidated || msg == null || msg.isEmpty) return const SizedBox.shrink();
+      if (!_hasValidated || msg == null || msg.isEmpty)
+        return const SizedBox.shrink();
       return Padding(
         padding: const EdgeInsets.only(top: 6, left: 6),
         child: Align(
@@ -838,7 +850,10 @@ class _RegisterPageState extends State<RegisterPage> {
             width: 1.2,
           ),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 14,
+        ),
       );
     }
 
@@ -866,7 +881,10 @@ class _RegisterPageState extends State<RegisterPage> {
             width: 1.2,
           ),
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 12,
+        ),
       );
     }
 
@@ -1040,7 +1058,9 @@ class _RegisterPageState extends State<RegisterPage> {
                               onChanged: (value) {
                                 if (_hasValidated) {
                                   setState(() {
-                                    _fieldErrors['phone'] = _validatePhone(value);
+                                    _fieldErrors['phone'] = _validatePhone(
+                                      value,
+                                    );
                                   });
                                 }
                               },
@@ -1066,7 +1086,9 @@ class _RegisterPageState extends State<RegisterPage> {
                               onChanged: (value) {
                                 if (_hasValidated) {
                                   setState(() {
-                                    _fieldErrors['email'] = _validateEmail(value);
+                                    _fieldErrors['email'] = _validateEmail(
+                                      value,
+                                    );
                                   });
                                 }
                               },
@@ -1081,10 +1103,15 @@ class _RegisterPageState extends State<RegisterPage> {
                             // ADDRESS
                             label('ADDRESS'),
                             DropdownButtonFormField<String>(
-                              value: _provinces.isNotEmpty && 
-                                     _provinces.any((p) => p['name'] == _selectedProvinceName)
-                                  ? _selectedProvinceName
-                                  : null,
+                              value:
+                                  _provinces.isNotEmpty &&
+                                          _provinces.any(
+                                            (p) =>
+                                                p['name'] ==
+                                                _selectedProvinceName,
+                                          )
+                                      ? _selectedProvinceName
+                                      : null,
                               isExpanded: true,
                               decoration: dropdownDecoration(
                                 hint: 'Select province',
@@ -1092,21 +1119,22 @@ class _RegisterPageState extends State<RegisterPage> {
                               ),
                               dropdownColor: Colors.white,
                               iconEnabledColor: Colors.black54,
-                              items: _provinces
-                                  .map(
-                                    (p) => DropdownMenuItem<String>(
-                                      value: p['name'],
-                                      child: Text(
-                                        p['name']!,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.black87,
-                                          fontSize: 14,
+                              items:
+                                  _provinces
+                                      .map(
+                                        (p) => DropdownMenuItem<String>(
+                                          value: p['name'],
+                                          child: Text(
+                                            p['name']!,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Colors.black87,
+                                              fontSize: 14,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
+                                      )
+                                      .toList(),
                               onChanged: (value) {
                                 setState(() {
                                   _selectedProvinceName = value;
@@ -1124,21 +1152,22 @@ class _RegisterPageState extends State<RegisterPage> {
                               ),
                               dropdownColor: Colors.white,
                               iconEnabledColor: Colors.black54,
-                              items: _cities
-                                  .map(
-                                    (c) => DropdownMenuItem<String>(
-                                      value: c['name'],
-                                      child: Text(
-                                        c['name']!,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.black87,
-                                          fontSize: 14,
+                              items:
+                                  _cities
+                                      .map(
+                                        (c) => DropdownMenuItem<String>(
+                                          value: c['name'],
+                                          child: Text(
+                                            c['name']!,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Colors.black87,
+                                              fontSize: 14,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
+                                      )
+                                      .toList(),
                               onChanged: (value) {
                                 setState(() {
                                   _selectedCityName = value;
@@ -1164,21 +1193,22 @@ class _RegisterPageState extends State<RegisterPage> {
                               ),
                               dropdownColor: Colors.white,
                               iconEnabledColor: Colors.black54,
-                              items: _barangays
-                                  .map(
-                                    (b) => DropdownMenuItem<String>(
-                                      value: b['name'],
-                                      child: Text(
-                                        b['name']!,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: Colors.black87,
-                                          fontSize: 14,
+                              items:
+                                  _barangays
+                                      .map(
+                                        (b) => DropdownMenuItem<String>(
+                                          value: b['name'],
+                                          child: Text(
+                                            b['name']!,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: Colors.black87,
+                                              fontSize: 14,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
+                                      )
+                                      .toList(),
                               onChanged: (value) {
                                 setState(() {
                                   _selectedBarangayName = value;
@@ -1197,7 +1227,9 @@ class _RegisterPageState extends State<RegisterPage> {
                               onChanged: (value) {
                                 if (_hasValidated) {
                                   setState(() {
-                                    _fieldErrors['address'] = _validateAddress(value);
+                                    _fieldErrors['address'] = _validateAddress(
+                                      value,
+                                    );
                                   });
                                 }
                               },
@@ -1224,7 +1256,8 @@ class _RegisterPageState extends State<RegisterPage> {
                                 _calculatePasswordStrength(value);
                                 if (_hasValidated) {
                                   setState(() {
-                                    _fieldErrors['password'] = _validatePassword(value);
+                                    _fieldErrors['password'] =
+                                        _validatePassword(value);
                                   });
                                 }
                               },
@@ -1261,9 +1294,10 @@ class _RegisterPageState extends State<RegisterPage> {
                                 borderRadius: BorderRadius.circular(4),
                                 child: LinearProgressIndicator(
                                   minHeight: 6,
-                                  value: _passwordStrength == 'Weak'
-                                      ? 0.3
-                                      : _passwordStrength == 'Medium'
+                                  value:
+                                      _passwordStrength == 'Weak'
+                                          ? 0.3
+                                          : _passwordStrength == 'Medium'
                                           ? 0.6
                                           : 1.0,
                                   backgroundColor: Colors.grey.shade300,
@@ -1369,25 +1403,26 @@ class _RegisterPageState extends State<RegisterPage> {
                                     borderRadius: BorderRadius.circular(10),
                                   ),
                                 ),
-                                child: _isLoading
-                                    ? const SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                            Colors.white,
+                                child:
+                                    _isLoading
+                                        ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                  Colors.white,
+                                                ),
+                                          ),
+                                        )
+                                        : const Text(
+                                          'Create Account',
+                                          style: TextStyle(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w600,
                                           ),
                                         ),
-                                      )
-                                    : const Text(
-                                        'Create Account',
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
                               ),
                             ),
 
@@ -1411,7 +1446,8 @@ class _RegisterPageState extends State<RegisterPage> {
                                       Navigator.pushAndRemoveUntil(
                                         context,
                                         MaterialPageRoute(
-                                          builder: (context) => const LoginPage(),
+                                          builder:
+                                              (context) => const LoginPage(),
                                         ),
                                         (route) => false,
                                       );

@@ -611,7 +611,7 @@ class _LoginPageState extends State<LoginPage> {
                             const SizedBox(height: 22),
 
                             // NAME
-                            label('NAME'),
+                            label('Number or Email'),
                             TextField(
                               key: const ValueKey('textfield_email'),
                               controller: _emailController,
@@ -631,7 +631,7 @@ class _LoginPageState extends State<LoginPage> {
                                 }
                               },
                               decoration: fieldDecoration(
-                                hint: 'username or email',
+                                hint: 'mobile number or email',
                                 hasError:
                                     _hasValidated &&
                                     _fieldErrors['email'] != null,
