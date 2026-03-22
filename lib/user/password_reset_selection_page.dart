@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'password_reset_email_page.dart';
-import 'password_reset_phone_page.dart';
 
-/// Password reset method selection screen.
-/// Shows options based on what the user has (email, phone, or both).
+/// Email-only password reset lookup screen.
 class PasswordResetSelectionPage extends StatefulWidget {
   const PasswordResetSelectionPage({Key? key}) : super(key: key);
 
@@ -15,107 +13,68 @@ class PasswordResetSelectionPage extends StatefulWidget {
 
 class _PasswordResetSelectionPageState
     extends State<PasswordResetSelectionPage> {
-  final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   bool _isLoading = false;
   String? _errorMessage;
-  bool _hasEmail = false;
-  bool _hasPhone = false;
-  String? _userEmail;
-  String? _userPhone;
-  String? _userId;
-
-  String _normalizePhMobile(String input) {
-    final digits = input.replaceAll(RegExp(r'\D'), '');
-    if (digits.isEmpty) return '';
-    if (digits.startsWith('63') && digits.length == 12) return '0${digits.substring(2)}';
-    if (digits.startsWith('9') && digits.length == 10) return '0$digits';
-    return digits;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _checkUserInfo();
-  }
-
-  Future<void> _checkUserInfo() async {
+  
+  Future<void> _findAccountByEmail() async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     try {
-      final phoneRaw = _phoneController.text.trim();
-      final phone = _normalizePhMobile(phoneRaw);
       final email = _emailController.text.trim();
 
-      if (phone.isEmpty && email.isEmpty) {
+      if (email.isEmpty) {
         setState(() {
-          _errorMessage = 'Please enter your phone number or email address.';
+          _errorMessage = 'Please enter your email address.';
           _isLoading = false;
         });
         return;
       }
 
-      QuerySnapshot? query;
+      final query = await FirebaseFirestore.instance
+          .collection('users')
+          .where('email', isEqualTo: email)
+          .limit(1)
+          .get();
 
-      // Search by phone first (if provided)
-      if (phone.isNotEmpty) {
-        query = await FirebaseFirestore.instance
-            .collection('users')
-            .where('phoneNumber', isEqualTo: phone)
-            .limit(1)
-            .get();
-        // Backward-compat: old users may have stored non-normalized phoneNumber (with spaces/dashes)
-        if (query.docs.isEmpty && phoneRaw.isNotEmpty && phoneRaw != phone) {
-          query = await FirebaseFirestore.instance
-              .collection('users')
-              .where('phoneNumber', isEqualTo: phoneRaw)
-              .limit(1)
-              .get();
-        }
-      }
-
-      // If not found and email provided, search by email
-      if ((query == null || query.docs.isEmpty) && email.isNotEmpty) {
-        query = await FirebaseFirestore.instance
-            .collection('users')
-            .where('email', isEqualTo: email)
-            .limit(1)
-            .get();
-      }
-
-      if (query == null || query.docs.isEmpty) {
+      if (query.docs.isEmpty) {
         setState(() {
-          _errorMessage =
-              'No account found with the provided phone number or email.';
+          _errorMessage = 'No account found with the provided email address.';
           _isLoading = false;
         });
         return;
       }
 
       final userDoc = query.docs.first;
-      final data = userDoc.data() as Map<String, dynamic>;
-      _userId = userDoc.id;
-      _userEmail = (data['email'] as String?)?.trim() ?? '';
-      _userPhone = (data['phoneNumber'] as String?)?.trim() ?? '';
-      _hasEmail = _userEmail!.isNotEmpty &&
-          !_userEmail!.endsWith('@oinkcheck.local');
-      _hasPhone = _userPhone!.isNotEmpty;
+      final data = userDoc.data();
+      final userId = userDoc.id;
+      final userEmail = data['email']?.toString().trim() ?? '';
+      final hasRealEmail =
+          userEmail.isNotEmpty && !userEmail.endsWith('@oinkcheck.local');
 
-      if (!_hasEmail && !_hasPhone) {
+      if (!hasRealEmail) {
         setState(() {
           _errorMessage =
-              'Account found but no email or phone number on file. Please contact support.';
+              'This account has no valid email for password reset. Please contact support.';
           _isLoading = false;
         });
         return;
       }
 
-      setState(() {
-        _isLoading = false;
-      });
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PasswordResetEmailPage(
+            email: userEmail,
+            userId: userId,
+          ),
+        ),
+      );
     } catch (e) {
       setState(() {
         _errorMessage = 'An error occurred. Please try again.';
@@ -124,35 +83,8 @@ class _PasswordResetSelectionPageState
     }
   }
 
-  void _handleMethodSelection(String method) {
-    if (_userId == null) return;
-
-    if (method == 'email' && _hasEmail) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PasswordResetEmailPage(
-            email: _userEmail!,
-            userId: _userId!,
-          ),
-        ),
-      );
-    } else if (method == 'phone' && _hasPhone) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PasswordResetPhonePage(
-            phoneNumber: _userPhone!,
-            userId: _userId!,
-          ),
-        ),
-      );
-    }
-  }
-
   @override
   void dispose() {
-    _phoneController.dispose();
     _emailController.dispose();
     super.dispose();
   }
@@ -192,31 +124,8 @@ class _PasswordResetSelectionPageState
               ),
               const SizedBox(height: 8),
               const Text(
-                'Enter your phone number or email to find your account.',
+                'Enter your email address to find your account.',
                 style: TextStyle(fontSize: 14, color: Colors.black54),
-              ),
-              const SizedBox(height: 24),
-              TextField(
-                controller: _phoneController,
-                keyboardType: TextInputType.phone,
-                decoration: InputDecoration(
-                  labelText: 'Phone Number',
-                  hintText: '09XXXXXXXXX',
-                  prefixIcon: const Icon(Icons.phone),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'OR',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: Colors.black54,
-                ),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -249,7 +158,7 @@ class _PasswordResetSelectionPageState
               SizedBox(
                 height: 48,
                 child: ElevatedButton(
-                  onPressed: _isLoading ? null : _checkUserInfo,
+                  onPressed: _isLoading ? null : _findAccountByEmail,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: brandGreen,
                     shape: RoundedRectangleBorder(
@@ -276,112 +185,6 @@ class _PasswordResetSelectionPageState
                         ),
                 ),
               ),
-              if (_hasEmail || _hasPhone) ...[
-                const SizedBox(height: 32),
-                const Divider(),
-                const SizedBox(height: 24),
-                const Text(
-                  'Choose Reset Method',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                if (_hasEmail && _hasPhone) ...[
-                  // Both available - show choice
-                  _buildMethodCard(
-                    icon: Icons.email,
-                    title: 'Send reset link to email',
-                    subtitle: _userEmail,
-                    onTap: () => _handleMethodSelection('email'),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildMethodCard(
-                    icon: Icons.phone,
-                    title: 'Send OTP to phone',
-                    subtitle: _userPhone,
-                    onTap: () => _handleMethodSelection('phone'),
-                  ),
-                ] else if (_hasEmail) ...[
-                  // Only email
-                  _buildMethodCard(
-                    icon: Icons.email,
-                    title: 'Send reset link to email',
-                    subtitle: _userEmail,
-                    onTap: () => _handleMethodSelection('email'),
-                  ),
-                ] else if (_hasPhone) ...[
-                  // Only phone
-                  _buildMethodCard(
-                    icon: Icons.phone,
-                    title: 'Send OTP to phone',
-                    subtitle: _userPhone,
-                    onTap: () => _handleMethodSelection('phone'),
-                  ),
-                ],
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMethodCard({
-    required IconData icon,
-    required String title,
-    required String? subtitle,
-    required VoidCallback onTap,
-  }) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(icon, color: const Color(0xFF4CAF50)),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    if (subtitle != null && subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.black54,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.black54),
             ],
           ),
         ),

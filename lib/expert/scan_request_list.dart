@@ -712,7 +712,6 @@ class _ScanRequestListState extends State<ScanRequestList>
                                 : const SizedBox.shrink();
                           },
                         ),
-                      // Delete button removed - experts and head vets cannot delete submitted reports
                     ],
                   ],
                 ),
