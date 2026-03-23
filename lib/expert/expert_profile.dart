@@ -736,11 +736,12 @@ class _ExpertProfileState extends State<ExpertProfile> {
     final TextEditingController addressController = TextEditingController(
       text: _userAddress,
     );
-    
+
     // Validation state
     final ValueNotifier<bool> hasValidated = ValueNotifier<bool>(false);
-    final ValueNotifier<Map<String, String?>> fieldErrors = ValueNotifier<Map<String, String?>>({});
-    
+    final ValueNotifier<Map<String, String?>> fieldErrors =
+        ValueNotifier<Map<String, String?>>({});
+
     // Validation functions
     String? validateFullName(String? value) {
       if (value == null || value.trim().isEmpty) {
@@ -751,7 +752,7 @@ class _ExpertProfileState extends State<ExpertProfile> {
       }
       return null;
     }
-    
+
     String? validateAddress(String? value) {
       if (value == null || value.trim().isEmpty) {
         return 'Please enter your address';
@@ -761,7 +762,7 @@ class _ExpertProfileState extends State<ExpertProfile> {
       }
       return null;
     }
-    
+
     String? validatePhone(String? value) {
       if (value == null || value.trim().isEmpty) {
         return 'Please enter your phone number';
@@ -774,7 +775,7 @@ class _ExpertProfileState extends State<ExpertProfile> {
       }
       return null;
     }
-    
+
     String? validateEmail(String? value) {
       if (value == null || value.trim().isEmpty) {
         return 'Please enter your email';
@@ -785,7 +786,7 @@ class _ExpertProfileState extends State<ExpertProfile> {
       }
       return null;
     }
-    
+
     // Helper function to build validated text fields
     Widget buildValidatedTextField({
       required String label,
@@ -801,7 +802,7 @@ class _ExpertProfileState extends State<ExpertProfile> {
         builder: (context, errors, _) {
           final errorText = hasValidated.value ? errors[fieldKey] : null;
           final hasError = errorText != null && errorText.isNotEmpty;
-          
+
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -821,7 +822,10 @@ class _ExpertProfileState extends State<ExpertProfile> {
                   labelText: label,
                   prefixIcon: prefixIcon != null ? Icon(prefixIcon) : null,
                   filled: true,
-                  fillColor: hasError ? Colors.redAccent.withOpacity(0.1) : Colors.transparent,
+                  fillColor:
+                      hasError
+                          ? Colors.redAccent.withOpacity(0.1)
+                          : Colors.transparent,
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(12),
                     borderSide: BorderSide(
@@ -863,7 +867,10 @@ class _ExpertProfileState extends State<ExpertProfile> {
                 Padding(
                   padding: const EdgeInsets.only(left: 12, top: 6, right: 12),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.redAccent,
                       borderRadius: BorderRadius.circular(6),
@@ -980,12 +987,14 @@ class _ExpertProfileState extends State<ExpertProfile> {
                             'phone': validatePhone(phoneController.text),
                             'address': validateAddress(addressController.text),
                           };
-                          
+
                           // Check if there are any errors
-                          if (fieldErrors.value.values.any((error) => error != null && error.isNotEmpty)) {
+                          if (fieldErrors.value.values.any(
+                            (error) => error != null && error.isNotEmpty,
+                          )) {
                             return;
                           }
-                          
+
                           try {
                             final user = FirebaseAuth.instance.currentUser;
                             if (user != null) {
@@ -1060,19 +1069,24 @@ class _ExpertProfileState extends State<ExpertProfile> {
     final ValueNotifier<bool> hideCurrent = ValueNotifier<bool>(true);
     final ValueNotifier<bool> hideNew = ValueNotifier<bool>(true);
     final ValueNotifier<bool> hideConfirm = ValueNotifier<bool>(true);
-    
+
     // Password strength tracking
     final ValueNotifier<String> passwordStrength = ValueNotifier<String>('');
-    final ValueNotifier<Color> passwordStrengthColor = ValueNotifier<Color>(Colors.grey);
-    
+    final ValueNotifier<Color> passwordStrengthColor = ValueNotifier<Color>(
+      Colors.grey,
+    );
+
     void calculatePasswordStrength(String password) {
       bool hasLength = password.length >= 8;
       bool hasUppercase = password.contains(RegExp(r'[A-Z]'));
       bool hasLowercase = password.contains(RegExp(r'[a-z]'));
       bool hasNumber = password.contains(RegExp(r'[0-9]'));
-      bool hasSpecialChar = password.contains(RegExp(r'[!@#$%^&*(),.?":{}|<>]'));
+      bool hasSpecialChar = password.contains(
+        RegExp(r'[!@#$%^&*(),.?":{}|<>]'),
+      );
 
-      bool meetsRequirements = hasLength && hasUppercase && hasLowercase && hasNumber;
+      bool meetsRequirements =
+          hasLength && hasUppercase && hasLowercase && hasNumber;
 
       if (!hasLength || (!hasUppercase && !hasLowercase && !hasNumber)) {
         passwordStrength.value = 'Weak';
@@ -1082,7 +1096,8 @@ class _ExpertProfileState extends State<ExpertProfile> {
         passwordStrengthColor.value = Colors.orange;
       } else {
         passwordStrength.value = hasSpecialChar ? 'Strong' : 'Good';
-        passwordStrengthColor.value = hasSpecialChar ? Colors.green : Colors.lightGreen;
+        passwordStrengthColor.value =
+            hasSpecialChar ? Colors.green : Colors.lightGreen;
       }
     }
 
@@ -1100,238 +1115,258 @@ class _ExpertProfileState extends State<ExpertProfile> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text(
-                        'Change Password',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.close),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: hideCurrent,
-                    builder:
-                        (context, hidden, _) => TextField(
-                          controller: currentPasswordController,
-                          obscureText: hidden,
-                          decoration: InputDecoration(
-                            labelText: 'Current Password',
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                hidden
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                              ),
-                              onPressed: () => hideCurrent.value = !hidden,
-                            ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Change Password',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
-                  ),
-                  const SizedBox(height: 12),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: hideNew,
-                    builder:
-                        (context, hidden, _) => TextField(
-                          controller: newPasswordController,
-                          obscureText: hidden,
-                          onChanged: (value) => calculatePasswordStrength(value),
-                          decoration: InputDecoration(
-                            labelText: 'New Password',
-                            prefixIcon: const Icon(Icons.lock),
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                hidden
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: hideCurrent,
+                      builder:
+                          (context, hidden, _) => TextField(
+                            controller: currentPasswordController,
+                            obscureText: hidden,
+                            decoration: InputDecoration(
+                              labelText: 'Current Password',
+                              prefixIcon: const Icon(Icons.lock_outline),
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  hidden
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                ),
+                                onPressed: () => hideCurrent.value = !hidden,
                               ),
-                              onPressed: () => hideNew.value = !hidden,
                             ),
                           ),
-                        ),
-                  ),
-                  // Password Strength Indicator
-                  ValueListenableBuilder<String>(
-                    valueListenable: passwordStrength,
-                    builder: (context, strength, _) {
-                      if (newPasswordController.text.isEmpty) {
-                        return const SizedBox.shrink();
-                      }
-                      return Padding(
-                        padding: const EdgeInsets.only(top: 8, left: 12),
-                        child: Row(
-                          children: [
-                            Text(
-                              'Password Strength: ',
-                              style: TextStyle(color: Colors.grey[700], fontSize: 12),
-                            ),
-                            ValueListenableBuilder<Color>(
-                              valueListenable: passwordStrengthColor,
-                              builder: (context, color, _) => Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: color, width: 1),
+                    ),
+                    const SizedBox(height: 12),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: hideNew,
+                      builder:
+                          (context, hidden, _) => TextField(
+                            controller: newPasswordController,
+                            obscureText: hidden,
+                            onChanged:
+                                (value) => calculatePasswordStrength(value),
+                            decoration: InputDecoration(
+                              labelText: 'New Password',
+                              prefixIcon: const Icon(Icons.lock),
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  hidden
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
                                 ),
-                                child: Text(
-                                  strength,
-                                  style: TextStyle(
-                                    color: color,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                                onPressed: () => hideNew.value = !hidden,
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  ValueListenableBuilder<bool>(
-                    valueListenable: hideConfirm,
-                    builder:
-                        (context, hidden, _) => TextField(
-                          controller: confirmPasswordController,
-                          obscureText: hidden,
-                          decoration: InputDecoration(
-                            labelText: 'Confirm New Password',
-                            prefixIcon: const Icon(Icons.lock),
-                            border: const OutlineInputBorder(),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                hidden
-                                    ? Icons.visibility_off
-                                    : Icons.visibility,
-                              ),
-                              onPressed: () => hideConfirm.value = !hidden,
                             ),
                           ),
-                        ),
-                  ),
-                  const SizedBox(height: 16),
-                  ValueListenableBuilder<String?>(
-                    valueListenable: errorNotifier,
-                    builder:
-                        (context, error, child) =>
-                            error == null
-                                ? const SizedBox.shrink()
-                                : Padding(
-                                  padding: const EdgeInsets.only(bottom: 8),
-                                  child: Text(
-                                    error,
-                                    style: const TextStyle(color: Colors.red),
-                                  ),
+                    ),
+                    // Password Strength Indicator
+                    ValueListenableBuilder<String>(
+                      valueListenable: passwordStrength,
+                      builder: (context, strength, _) {
+                        if (newPasswordController.text.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8, left: 12),
+                          child: Row(
+                            children: [
+                              Text(
+                                'Password Strength: ',
+                                style: TextStyle(
+                                  color: Colors.grey[700],
+                                  fontSize: 12,
                                 ),
-                  ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: () async {
-                        final current = currentPasswordController.text;
-                        final newPass = newPasswordController.text;
-                        final confirm = confirmPasswordController.text;
-
-                        if (current.isEmpty ||
-                            newPass.isEmpty ||
-                            confirm.isEmpty) {
-                          errorNotifier.value = 'All fields are required.';
-                          return;
-                        }
-
-                        if (newPass != confirm) {
-                          errorNotifier.value = 'New passwords do not match.';
-                          return;
-                        }
-
-                        // Enhanced password validation
-                        if (newPass.length < 8) {
-                          errorNotifier.value = 'Password must be at least 8 characters';
-                          return;
-                        }
-                        
-                        if (!newPass.contains(RegExp(r'[A-Z]'))) {
-                          errorNotifier.value = 'Password must contain at least one uppercase letter';
-                          return;
-                        }
-                        
-                        if (!newPass.contains(RegExp(r'[a-z]'))) {
-                          errorNotifier.value = 'Password must contain at least one lowercase letter';
-                          return;
-                        }
-                        
-                        if (!newPass.contains(RegExp(r'[0-9]'))) {
-                          errorNotifier.value = 'Password must contain at least one number';
-                          return;
-                        }
-
-                        try {
-                          final user = FirebaseAuth.instance.currentUser;
-                          if (user != null && user.email != null) {
-                            // Re-authenticate user with current password
-                            final credential = EmailAuthProvider.credential(
-                              email: user.email!,
-                              password: current,
-                            );
-                            await user.reauthenticateWithCredential(credential);
-
-                            // Update password
-                            await user.updatePassword(newPass);
-
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Password changed successfully!'),
-                                backgroundColor: Colors.green,
                               ),
-                            );
-                          }
-                        } on FirebaseAuthException catch (e) {
-                          String errorMessage =
-                              'An error occurred while changing password.';
-                          if (e.code == 'wrong-password') {
-                            errorMessage = 'Current password is incorrect.';
-                          } else if (e.code == 'weak-password') {
-                            errorMessage = 'New password is too weak.';
-                          } else if (e.code == 'requires-recent-login') {
-                            errorMessage =
-                                'Please log out and log in again before changing password.';
-                          }
-                          errorNotifier.value = errorMessage;
-                        } catch (e) {
-                          errorNotifier.value = 'An unexpected error occurred.';
-                        }
+                              ValueListenableBuilder<Color>(
+                                valueListenable: passwordStrengthColor,
+                                builder:
+                                    (context, color, _) => Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(4),
+                                        border: Border.all(
+                                          color: color,
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Text(
+                                        strength,
+                                        style: TextStyle(
+                                          color: color,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                              ),
+                            ],
+                          ),
+                        );
                       },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    ),
+                    const SizedBox(height: 12),
+                    ValueListenableBuilder<bool>(
+                      valueListenable: hideConfirm,
+                      builder:
+                          (context, hidden, _) => TextField(
+                            controller: confirmPasswordController,
+                            obscureText: hidden,
+                            decoration: InputDecoration(
+                              labelText: 'Confirm New Password',
+                              prefixIcon: const Icon(Icons.lock),
+                              border: const OutlineInputBorder(),
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                  hidden
+                                      ? Icons.visibility_off
+                                      : Icons.visibility,
+                                ),
+                                onPressed: () => hideConfirm.value = !hidden,
+                              ),
+                            ),
+                          ),
+                    ),
+                    const SizedBox(height: 16),
+                    ValueListenableBuilder<String?>(
+                      valueListenable: errorNotifier,
+                      builder:
+                          (context, error, child) =>
+                              error == null
+                                  ? const SizedBox.shrink()
+                                  : Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Text(
+                                      error,
+                                      style: const TextStyle(color: Colors.red),
+                                    ),
+                                  ),
+                    ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final current = currentPasswordController.text;
+                          final newPass = newPasswordController.text;
+                          final confirm = confirmPasswordController.text;
+
+                          if (current.isEmpty ||
+                              newPass.isEmpty ||
+                              confirm.isEmpty) {
+                            errorNotifier.value = 'All fields are required.';
+                            return;
+                          }
+
+                          if (newPass != confirm) {
+                            errorNotifier.value = 'New passwords do not match.';
+                            return;
+                          }
+
+                          // Enhanced password validation
+                          if (newPass.length < 8) {
+                            errorNotifier.value =
+                                'Password must be at least 8 characters';
+                            return;
+                          }
+
+                          if (!newPass.contains(RegExp(r'[A-Z]'))) {
+                            errorNotifier.value =
+                                'Password must contain at least one uppercase letter';
+                            return;
+                          }
+
+                          if (!newPass.contains(RegExp(r'[a-z]'))) {
+                            errorNotifier.value =
+                                'Password must contain at least one lowercase letter';
+                            return;
+                          }
+
+                          if (!newPass.contains(RegExp(r'[0-9]'))) {
+                            errorNotifier.value =
+                                'Password must contain at least one number';
+                            return;
+                          }
+
+                          try {
+                            final user = FirebaseAuth.instance.currentUser;
+                            if (user != null && user.email != null) {
+                              // Re-authenticate user with current password
+                              final credential = EmailAuthProvider.credential(
+                                email: user.email!,
+                                password: current,
+                              );
+                              await user.reauthenticateWithCredential(
+                                credential,
+                              );
+
+                              // Update password
+                              await user.updatePassword(newPass);
+
+                              Navigator.pop(context);
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Password changed successfully!',
+                                  ),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          } on FirebaseAuthException catch (e) {
+                            String errorMessage =
+                                'An error occurred while changing password.';
+                            if (e.code == 'wrong-password') {
+                              errorMessage = 'Current password is incorrect.';
+                            } else if (e.code == 'weak-password') {
+                              errorMessage = 'New password is too weak.';
+                            } else if (e.code == 'requires-recent-login') {
+                              errorMessage =
+                                  'Please log out and log in again before changing password.';
+                            }
+                            errorNotifier.value = errorMessage;
+                          } catch (e) {
+                            errorNotifier.value =
+                                'An unexpected error occurred.';
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                         ),
-                      ),
-                      child: const Text(
-                        'Change Password',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                        child: const Text(
+                          'Change Password',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
                 ),
               ),
             ),
@@ -1821,7 +1856,7 @@ class _ExpertProfileState extends State<ExpertProfile> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            'This profile is exclusively for plant disease experts. Regular users and other personnel do not have access to this interface.',
+                            'This profile is exclusively for provincial veterinarian. Regular users and other personnel do not have access to this interface.',
                             style: TextStyle(
                               color: Colors.grey[700],
                               fontSize: 14,

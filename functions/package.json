@@ -1,6 +1,6 @@
 {
   "name": "capstone-cloud-functions",
-  "description": "Cloud Functions for Firebase - notifications for MangoSense app",
+  "description": "Cloud Functions for Firebase - notifications for OinkCheck app",
   "version": "1.0.0",
   "engines": {
     "node": "20"

@@ -11,7 +11,7 @@
           "path": "https://your-s3-bucket.s3.amazonaws.com/users/USER_001/requests/REQ_001/IMG_20240610_090000.jpg",
           "detections": [
             {
-              "label": "Anthracnose",
+              "label": "Ringworm",
               "confidence": 0.89,
               "boundingBox": {
                 "left": 0.1,
@@ -36,7 +36,7 @@
           "path": "https://your-s3-bucket.s3.amazonaws.com/users/USER_001/requests/REQ_001/IMG_20240610_090100.jpg",
           "detections": [
             {
-              "label": "Powdery Mildew",
+              "label": "Swine Pox",
               "confidence": 0.92,
               "boundingBox": {
                 "left": 0.2,
@@ -50,11 +50,11 @@
       ],
       "diseaseSummary": [
         {
-          "name": "Anthracnose",
+          "name": "Ringworm",
           "count": 1
         },
         {
-          "name": "Powdery Mildew",
+          "name": "Swine Pox",
           "count": 1
         },
         {
@@ -66,26 +66,25 @@
         "expertId": "EXP_001",
         "expertName": "Dr. Jose Garcia",
         "reviewedAt": "2024-06-10 11:05",
-        "comment": "Multiple disease conditions detected. Anthracnose and powdery mildew require immediate attention. The healthy leaves show good plant resilience.",
+        "comment": "Multiple skin conditions detected. Ringworm and swine pox require veterinary follow-up. Healthy areas show generally good skin condition elsewhere on the animal.",
         "severityAssessment": {
           "level": "high"
         },
         "treatmentPlan": {
           "recommendations": [
             {
-              "treatment": "Copper-based fungicide treatment",
-              "dosage": "2-3 ml per liter of water",
-              "frequency": "Every 7-10 days",
-              "precautions": "Apply early morning or late evening. Avoid application before rain. Wear gloves and mask during application."
+              "treatment": "Veterinary-directed antifungal and supportive care for ringworm; isolate and manage swine pox per biosecurity protocol",
+              "dosage": "Per veterinarian",
+              "frequency": "Per treatment protocol",
+              "precautions": "Use PPE; follow withdrawal periods for food-producing pigs; improve pen hygiene"
             }
           ],
           "preventiveMeasures": [
-            "Regular pruning of affected branches",
-            "Maintain proper spacing between plants",
-            "Ensure adequate air circulation",
-            "Remove and destroy infected leaves",
-            "Monitor humidity levels",
-            "Apply preventive fungicide during dry weather"
+            "Improve pen hygiene, drainage, and dry bedding",
+            "Separate affected pigs as advised by your veterinarian",
+            "Continue periodic skin checks and scanning",
+            "Review vaccination and biosecurity with a veterinarian",
+            "Monitor the rest of the herd closely"
           ]
         }
       }

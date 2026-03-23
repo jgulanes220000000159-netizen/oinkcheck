@@ -685,14 +685,14 @@ class _AnalysisSummaryScreenState extends State<AnalysisSummaryScreen> {
   static const Map<String, Map<String, dynamic>> specialDiseaseInfo = {
     'healthy': {
       'symptoms': [
-        'Vibrant green leaves without spots or lesions',
-        'Normal growth pattern',
-        'No visible signs of disease or pest damage',
+        'Skin and coat appear normal without suspicious lesions',
+        'Behavior and movement look typical for the animal',
+        'No clear signs of acute infectious skin disease in the images',
       ],
       'treatments': [
-        'Regular monitoring for early detection of problems',
-        'Maintain proper irrigation and fertilization',
-        'Practice good orchard sanitation',
+        'Continue periodic scans for early detection',
+        'Keep pens clean, dry, and well ventilated',
+        'Maintain good nutrition and consult a veterinarian if anything changes',
       ],
     },
     'unknown': {

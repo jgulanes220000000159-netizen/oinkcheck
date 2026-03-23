@@ -51,7 +51,7 @@ class AppHeader extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Text(
-                title ?? 'MangoSense',
+                title ?? 'OinkCheck',
                 style: const TextStyle(
                   color: Colors.yellow,
                   fontSize: 20,

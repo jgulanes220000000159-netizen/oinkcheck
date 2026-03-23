@@ -1,27 +1,39 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Map disease names to asset image paths (same as farmer side)
+// Map Firestore `diseases.name` values to header images (see `lib/shared/disease_image.dart`).
 const Map<String, String> diseaseImages = {
-  'Anthracnose': 'assets/replace_disease/anthracnose_image.jpg',
-  'Bacterial black spot': 'assets/replace_disease/bacterial_image.jpg',
-  'Dieback': 'assets/replace_disease/dieback_image.jpg',
-  'Powdery mildew': 'assets/replace_disease/powdery_image.jpg',
+  'Healthy': 'assets/replace_disease/healthy_image.jpg',
+  'Bacterial Erysipelas': 'assets/replace_disease/erysipelas.jpg',
+  'Greasy Pig Disease': 'assets/replace_disease/greasy_pig.jpg',
+  'Sunburn': 'assets/replace_disease/sunburn.jpg',
+  'Ringworm': 'assets/replace_disease/ringworm.jpg',
+  'Mange': 'assets/replace_disease/mange.jpg',
+  'Foot-and-Mouth Disease': 'assets/replace_disease/foot_disease.jpg',
+  'Swine Pox': 'assets/replace_disease/swine_pox.jpg',
 };
 
+/// Must match `name` field documents in Firestore `diseases` (pig classes).
 const List<String> mainDiseases = [
-  'Anthracnose',
-  'Bacterial black spot',
-  'Dieback',
-  'Powdery mildew',
+  'Healthy',
+  'Bacterial Erysipelas',
+  'Greasy Pig Disease',
+  'Sunburn',
+  'Ringworm',
+  'Mange',
+  'Foot-and-Mouth Disease',
+  'Swine Pox',
 ];
 
-// Color coding for diseases (matching your analytics colors)
 const Map<String, Color> diseaseColors = {
-  'Anthracnose': Color(0xFFFF9800), // Orange
-  'Bacterial black spot': Color(0xFF9C27B0), // Purple
-  'Dieback': Color(0xFFF44336), // Red
-  'Powdery mildew': Color(0xFF1B5E20), // Dark Green
+  'Healthy': Color(0xFF1E88E5),
+  'Bacterial Erysipelas': Color(0xFFE53935),
+  'Greasy Pig Disease': Color(0xFFFB8C00),
+  'Sunburn': Color(0xFFFDD835),
+  'Ringworm': Color(0xFF8E24AA),
+  'Mange': Color(0xFF6D4C41),
+  'Foot-and-Mouth Disease': Color(0xFFD81B60),
+  'Swine Pox': Color(0xFF43A047),
 };
 
 class DiseaseEditor extends StatefulWidget {

@@ -49,10 +49,11 @@ class DiseaseDetailsPage extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
               name.toLowerCase() == 'healthy'
-                  ? 'Plant Status'
-                  : name.toLowerCase().contains('tip burn')
-                  ? 'Disorder Identified'
-                  : 'Disease Identified',
+                  ? 'Pig Health Status'
+                  : name.toLowerCase().contains('sunburn') ||
+                          name.toLowerCase().contains('tip burn')
+                      ? 'Condition Identified'
+                      : 'Disease Identified',
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 24,

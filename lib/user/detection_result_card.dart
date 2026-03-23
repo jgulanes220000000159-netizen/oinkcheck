@@ -178,10 +178,10 @@ class DetectionResultCard extends StatelessWidget {
                               size: 24,
                             ),
                             const SizedBox(width: 12),
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                                'Healthy Leaves',
-                                style: TextStyle(
+                                tr('healthy_leaves'),
+                                style: const TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
                                 ),
@@ -205,10 +205,13 @@ class DetectionResultCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Center(
+                        Center(
                           child: Text(
-                            'No additional information for healthy leaves.',
-                            style: TextStyle(fontSize: 16, color: Colors.grey),
+                            tr('no_additional_info_healthy_leaves'),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                            ),
                           ),
                         ),
                       ],

@@ -22,7 +22,7 @@ class ReviewManager {
       'diseaseSummary': [
         {'disease': 'Ringworm', 'averageConfidence': 0.92},
       ],
-      'notes': 'Leaf spots observed.',
+      'notes': 'Raised circular skin lesions noted on the flank.',
     },
     // Completed review sample
     {
@@ -35,11 +35,12 @@ class ReviewManager {
         {'path': 'assets/sample2.jpg', 'detections': []},
       ],
       'diseaseSummary': [
-        {'disease': 'Powdery Mildew', 'averageConfidence': 0.85},
+        {'disease': 'Greasy Pig Disease', 'averageConfidence': 0.85},
       ],
-      'notes': 'White powdery spots.',
+      'notes': 'Greasy, darkened patches along the back.',
       'expertReview': {
-        'comment': 'Confirmed Powdery Mildew. Recommend fungicide treatment.',
+        'comment':
+            'Consistent with greasy pig disease. Recommend cleaning and topical care per farm SOP; involve a veterinarian for prescription treatment.',
         'severityAssessment': {
           'level': 'medium',
           'confidence': 0.85,
@@ -48,15 +49,17 @@ class ReviewManager {
         'treatmentPlan': {
           'recommendations': [
             {
-              'treatment': 'Apply sulfur-based fungicide',
-              'dosage': '2g/L',
-              'frequency': 'Every 7 days',
-              'precautions': 'Avoid during rain',
+              'treatment':
+                  'Gentle washing with vet-directed antiseptic shampoo',
+              'dosage': 'Per product label',
+              'frequency': 'As advised until skin improves',
+              'precautions': 'Avoid harsh scrubbing; dry the pig thoroughly',
             },
           ],
           'preventiveMeasures': [
-            'Regular pruning',
-            'Proper spacing between plants',
+            'Improve pen hygiene and drainage',
+            'Separate severely affected animals if advised',
+            'Review nutrition with a veterinarian',
           ],
         },
         'reviewedAt': '2024-06-20T12:00:00',
@@ -73,11 +76,12 @@ class ReviewManager {
         {'path': 'assets/sample3.jpg', 'detections': []},
       ],
       'diseaseSummary': [
-        {'disease': 'Bacterial Blackspot', 'averageConfidence': 0.88},
+        {'disease': 'Mange', 'averageConfidence': 0.88},
       ],
-      'notes': 'Sample notes for Maria Santos.',
+      'notes': 'Intense scratching and patchy hair loss.',
       'expertReview': {
-        'comment': 'Confirmed Bacterial Blackspot.',
+        'comment':
+            'Signs suggest mange. Veterinary diagnosis and acaricide treatment are recommended.',
         'severityAssessment': {
           'level': 'medium',
           'confidence': 0.88,
@@ -86,15 +90,17 @@ class ReviewManager {
         'treatmentPlan': {
           'recommendations': [
             {
-              'treatment': 'Apply copper-based bactericide',
-              'dosage': '2g/L',
-              'frequency': 'Every 10 days',
-              'precautions': 'Avoid during rain',
+              'treatment': 'Veterinary-prescribed acaricide protocol',
+              'dosage': 'Per veterinarian',
+              'frequency': 'Per treatment protocol',
+              'precautions':
+                  'Observe withdrawal periods for food-producing pigs',
             },
           ],
           'preventiveMeasures': [
-            'Remove infected leaves',
-            'Improve air circulation',
+            'Treat in-contact pigs as directed',
+            'Disinfect equipment and improve pen cleanliness',
+            'Monitor the herd for new scratching or hair loss',
           ],
         },
         'reviewedAt': '2024-06-11T10:00:00',
