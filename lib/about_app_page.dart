@@ -181,7 +181,7 @@ class AboutAppPage extends StatelessWidget {
                   child: Column(
                     children: [
                       Text(
-                        'Version 1.0.8',
+                        'Version 1.0.9',
                         style: TextStyle(
                           color: Colors.white.withOpacity(0.7),
                           fontSize: 14,

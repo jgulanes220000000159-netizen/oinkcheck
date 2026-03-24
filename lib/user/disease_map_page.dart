@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:hive/hive.dart';
 import 'dart:async';
 import 'dart:math' as math;
 import '../shared/pig_disease_ui.dart';
@@ -19,6 +20,8 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
   List<CircleMarker> _heatmapCircles = [];
   List<Marker> _invisibleMarkers = []; // For click interaction
   String? _selectedDisease;
+  static const String _filterBoxName = 'diseaseMapFilterBox';
+  static const String _filterKeySelectedDisease = 'selectedDisease';
 
   // Use model label keys for filtering/colors (exclude healthy/unknown).
   final List<String> _diseaseKeys = const [
@@ -79,10 +82,48 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
   @override
   void initState() {
     super.initState();
+    _initializeFilterAndLoad();
+  }
+
+  Future<void> _initializeFilterAndLoad() async {
+    try {
+      final box = await Hive.openBox(_filterBoxName);
+      final saved = box.get(_filterKeySelectedDisease);
+      final savedKey = saved?.toString();
+      if (savedKey != null && _diseaseKeys.contains(savedKey)) {
+        _selectedDisease = savedKey;
+      } else {
+        _selectedDisease = null; // "Select disease" default
+      }
+    } catch (_) {
+      _selectedDisease = null;
+    }
+    if (!mounted) return;
     _loadDiseaseLocations();
   }
 
+  Future<void> _saveSelectedDiseaseFilter(String? value) async {
+    try {
+      final box = await Hive.openBox(_filterBoxName);
+      if (value == null || !_diseaseKeys.contains(value)) {
+        await box.delete(_filterKeySelectedDisease);
+      } else {
+        await box.put(_filterKeySelectedDisease, value);
+      }
+    } catch (_) {}
+  }
+
   Future<void> _loadDiseaseLocations() async {
+    if (_selectedDisease == null) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _heatmapCircles = [];
+        _invisibleMarkers = [];
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
     });
@@ -102,6 +143,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
       // Aggregate by City (focus area).
       // One marker per city for selected disease, with size based on case count.
       final Map<String, _BarangayAgg> agg = {};
+      int totalBackgroundReports = 0; // Includes healthy + diseased reports.
       final geocoder = GeocodingService();
       final Map<String, Map<String, dynamic>?> userCache = {};
 
@@ -122,20 +164,6 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
         for (final e in rawSummary) {
           if (e is Map) cleaned.add(Map<String, dynamic>.from(e));
         }
-        if (cleaned.isEmpty) continue;
-
-        // Collect all disease labels present in this report (no dominant logic).
-        final Set<String> diseaseKeysInReport =
-            cleaned
-                .map((e) => _canonicalDiseaseKey(e['label']?.toString() ?? ''))
-                .where((k) => k.isNotEmpty)
-                .toSet();
-        // If a specific disease is selected, skip reports that don't contain it.
-        if (_selectedDisease != null &&
-            !diseaseKeysInReport.contains(_selectedDisease)) {
-          continue;
-        }
-
         final userId = (data['userId'] ?? '').toString();
         if (userId.trim().isEmpty) continue;
 
@@ -190,17 +218,28 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
 
         if (barangay.trim().isEmpty && city.trim().isEmpty) continue;
 
+        // Count every completed report in the denominator (including healthy),
+        // to compute real disease distribution percentages.
+        totalBackgroundReports++;
+
+        // Collect selected/real disease labels only for numerator aggregation.
+        final Set<String> diseaseKeysInReport =
+            cleaned
+                .map(
+                  (e) => _canonicalDiseaseKey(
+                    (e['label'] ?? e['disease'] ?? e['name'] ?? '').toString(),
+                  ),
+                )
+                .where((k) => _diseaseKeys.contains(k))
+                .toSet();
+        // Skip reports that do not match the selected disease.
+        if (!diseaseKeysInReport.contains(_selectedDisease)) continue;
+
         // Group by CITY + PROVINCE (not barangay) so each city has one pin.
         final key = '${city.toLowerCase()}|${province.toLowerCase()}';
         agg.putIfAbsent(
           key,
           () => _BarangayAgg(
-            // For display we just pick one disease present in this barangay;
-            // filtering is handled above using the full set.
-            diseaseKey:
-                diseaseKeysInReport.isNotEmpty
-                    ? diseaseKeysInReport.first
-                    : 'swine_pox',
             province: province,
             city: city,
             // Keep first barangay seen for this city for informational text.
@@ -208,6 +247,10 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
           ),
         );
         agg[key]!.count++;
+        for (final diseaseKey in diseaseKeysInReport) {
+          agg[key]!.diseaseCounts[diseaseKey] =
+              (agg[key]!.diseaseCounts[diseaseKey] ?? 0) + 1;
+        }
       }
 
       // Geocode CITY centroid (best-effort, cached) so heatmap circles sit at city center,
@@ -228,45 +271,35 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
       final heatmapCircles = <CircleMarker>[];
       final invisibleMarkers = <Marker>[]; // For click interaction
 
-      // Calculate total cases for percentage calculation (once, before the loop)
-      final totalCases = agg.values.fold<int>(0, (sum, a) => sum + a.count);
-
+      // Numerator is selected disease count per city; denominator includes
+      // all completed reports (healthy + diseased) for real distribution.
+      final totalCases = totalBackgroundReports;
       for (final a in agg.values) {
         if (a.lat == null || a.lng == null) continue;
         final count = a.count;
         if (count <= 0) continue;
 
-        // Calculate percentage of total
+        // Raw share in current filtered set (for display).
         final percentage = totalCases > 0 ? (count / totalCases * 100) : 0.0;
 
-        // Calculate intensity based on percentage thresholds (31+/11-30/0-10)
+        // Convert raw percentage to intensity using the original thresholds.
         double intensity; // 0.0 to 1.0 for color gradient
-
         if (percentage <= 10) {
-          // Low: 0-10%
-          // Normalize within low range: 0% = 0.0, 10% = 0.33
           intensity = (percentage / 10.0) * 0.33;
         } else if (percentage <= 30) {
-          // Medium: 11-30%
-          // Normalize within medium range: 11% = 0.33, 30% = 0.67
           intensity = 0.33 + ((percentage - 10) / 20.0) * 0.34;
         } else {
-          // High: 31%+
-          // Normalize within high range: 31% = 0.67, scale up for higher percentages
           final excess = percentage - 30;
           intensity = 0.67 + (math.min(excess / 70.0, 1.0) * 0.33);
         }
 
-        // Calculate circle size based on percentage category
+        // Radius follows raw percentage with the same threshold bands.
         double radius;
         if (percentage <= 10) {
-          // Low: 500m to 1.5km
           radius = 500.0 + ((percentage / 10.0) * 1000.0);
         } else if (percentage <= 30) {
-          // Medium: 1.5km to 3km
           radius = 1500.0 + (((percentage - 10) / 20.0) * 1500.0);
         } else {
-          // High: 3km to 5km (capped)
           final excess = percentage - 30;
           radius = 3000.0 + (math.min(excess / 70.0, 1.0) * 2000.0);
         }
@@ -320,12 +353,12 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
             child: GestureDetector(
               onTap: () {
                 _showMarkerInfo(
-                  a.diseaseKey,
                   count,
                   percentage: percentage,
                   barangay: a.barangay,
                   city: a.city,
                   province: a.province,
+                  diseaseCounts: a.diseaseCounts,
                 );
               },
               child: Container(
@@ -355,21 +388,84 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
   }
 
   void _showMarkerInfo(
-    String diseaseKey,
     int count, {
     required double percentage,
     required String barangay,
     required String city,
     required String province,
+    required Map<String, int> diseaseCounts,
   }) {
+    final severity = _getSeverityLabel(percentage);
+    final severityColor = _severityColor(severity);
+    final selectedDiseaseName = PigDiseaseUI.displayName(
+      _selectedDisease ?? 'unknown',
+    );
+
     showDialog(
       context: context,
       builder:
           (context) => AlertDialog(
-            title: Text(PigDiseaseUI.displayName(diseaseKey)),
-            content: Text(
-              'Location: $barangay, $city, $province\nCases: $count (${percentage.toStringAsFixed(1)}%)\nSeverity: ${_getSeverityLabel(percentage)}',
-              style: const TextStyle(fontSize: 16),
+            title: Text(selectedDiseaseName),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Location',
+                  style: TextStyle(fontSize: 13, color: Colors.black54),
+                ),
+                Text(
+                  '$barangay, $city, $province',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildMetricCard(
+                        label: 'Cases',
+                        value: '$count',
+                        color: Colors.blueGrey,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _buildMetricCard(
+                        label: 'Share',
+                        value: '${percentage.toStringAsFixed(1)}%',
+                        color: Colors.indigo,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: severityColor.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: severityColor.withOpacity(0.35)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: severityColor),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Severity: $severity',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: severityColor,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             actions: [
               TextButton(
@@ -385,6 +481,46 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     if (percentage > 30) return 'High';
     if (percentage > 10) return 'Medium';
     return 'Low';
+  }
+
+  Color _severityColor(String severity) {
+    switch (severity) {
+      case 'High':
+        return Colors.red;
+      case 'Medium':
+        return Colors.orange;
+      default:
+        return Colors.green;
+    }
+  }
+
+  Widget _buildMetricCard({
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            value,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Get heatmap color based on intensity (0.0 to 1.0)
@@ -507,12 +643,8 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                             filled: true,
                             fillColor: Colors.white,
                           ),
-                          hint: const Text('All Diseases'),
+                          hint: const Text('Select disease'),
                           items: [
-                            const DropdownMenuItem<String>(
-                              value: null,
-                              child: Text('All Diseases'),
-                            ),
                             ..._diseaseKeys.map((key) {
                               return DropdownMenuItem<String>(
                                 value: key,
@@ -524,6 +656,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                             setState(() {
                               _selectedDisease = value;
                             });
+                            _saveSelectedDiseaseFilter(value);
                             _loadDiseaseLocations();
                           },
                         ),
@@ -589,16 +722,15 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
 
 class _BarangayAgg {
   _BarangayAgg({
-    required this.diseaseKey,
     required this.province,
     required this.city,
     required this.barangay,
   });
 
-  final String diseaseKey;
   final String province;
   final String city;
   final String barangay;
+  final Map<String, int> diseaseCounts = {};
   int count = 0;
   double? lat;
   double? lng;
