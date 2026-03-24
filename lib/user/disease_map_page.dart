@@ -282,17 +282,6 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
         // Raw share in current filtered set (for display).
         final percentage = totalCases > 0 ? (count / totalCases * 100) : 0.0;
 
-        // Convert raw percentage to intensity using the original thresholds.
-        double intensity; // 0.0 to 1.0 for color gradient
-        if (percentage <= 10) {
-          intensity = (percentage / 10.0) * 0.33;
-        } else if (percentage <= 30) {
-          intensity = 0.33 + ((percentage - 10) / 20.0) * 0.34;
-        } else {
-          final excess = percentage - 30;
-          intensity = 0.67 + (math.min(excess / 70.0, 1.0) * 0.33);
-        }
-
         // Radius follows raw percentage with the same threshold bands.
         double radius;
         if (percentage <= 10) {
@@ -304,8 +293,8 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
           radius = 3000.0 + (math.min(excess / 70.0, 1.0) * 2000.0);
         }
 
-        // Get heatmap color based on intensity
-        final heatmapColor = _getHeatmapColor(intensity);
+        // Use percentage-threshold color directly to avoid any mismatch.
+        final heatmapColor = _getHeatmapColorByPercentage(percentage);
 
         // Create smooth gradient heatmap effect using multiple overlapping circles
         // This simulates Kernel Density Estimation (KDE) for a smooth gradient
@@ -523,47 +512,11 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     );
   }
 
-  /// Get heatmap color based on intensity (0.0 to 1.0)
-  /// Returns gradient from green (low) -> yellow (medium) -> red (high)
-  /// Thresholds: Low (10% below), Medium (11% to 30%), High (31% and above)
-  Color _getHeatmapColor(double intensity) {
-    if (intensity <= 0.0) return const Color(0xFF4CAF50); // Green
-    if (intensity >= 1.0) return const Color(0xFFF44336); // Red
-
-    // Define thresholds for Low/Medium/High
-    const lowThreshold = 0.33; // 0.0 to 0.33 = Low (Green)
-    const mediumThreshold = 0.67; // 0.33 to 0.67 = Medium (Yellow)
-    // 0.67 to 1.0 = High (Red)
-
-    if (intensity < lowThreshold) {
-      // Low: Green to Light Green (0.0 to 0.33)
-      final t = intensity / lowThreshold; // Scale to 0.0-1.0
-      return Color.lerp(
-        const Color(0xFF4CAF50), // Green
-        const Color(0xFF8BC34A), // Light Green
-        t,
-      )!;
-    } else if (intensity < mediumThreshold) {
-      // Medium: Light Green to Yellow (0.33 to 0.67)
-      final t =
-          (intensity - lowThreshold) /
-          (mediumThreshold - lowThreshold); // Scale to 0.0-1.0
-      return Color.lerp(
-        const Color(0xFF8BC34A), // Light Green
-        const Color(0xFFFFEB3B), // Yellow
-        t,
-      )!;
-    } else {
-      // High: Yellow to Red (0.67 to 1.0)
-      final t =
-          (intensity - mediumThreshold) /
-          (1.0 - mediumThreshold); // Scale to 0.0-1.0
-      return Color.lerp(
-        const Color(0xFFFFEB3B), // Yellow
-        const Color(0xFFF44336), // Red
-        t,
-      )!;
-    }
+  /// Strict 3-band heatmap colors from raw percentage:
+  /// Low (<=10) -> Green, Medium (<=30) -> Orange, High (>30) -> Red.
+  Color _getHeatmapColorByPercentage(double percentage) {
+    final severity = _getSeverityLabel(percentage);
+    return _severityColor(severity);
   }
 
   @override
