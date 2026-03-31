@@ -1,12 +1,15 @@
-import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:hive/hive.dart';
-import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
-import '../shared/pig_disease_ui.dart';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:hive/hive.dart';
+import 'package:latlong2/latlong.dart';
+
 import '../shared/geocoding_service.dart';
+import '../shared/pig_disease_ui.dart';
 
 class DiseaseMapPage extends StatefulWidget {
   const DiseaseMapPage({Key? key}) : super(key: key);
@@ -17,13 +20,25 @@ class DiseaseMapPage extends StatefulWidget {
 
 class _DiseaseMapPageState extends State<DiseaseMapPage> {
   final MapController _mapController = MapController();
+
   List<CircleMarker> _heatmapCircles = [];
-  List<Marker> _invisibleMarkers = []; // For click interaction
+  List<Polygon> _municipalityPolygons = [];
+  List<Polygon> _outsideMaskPolygons = [];
+  List<Marker> _invisibleMarkers = [];
+  List<_GeoMunicipalityFeature> _municipalityFeatures = [];
+  Map<String, _MunicipalityHeatStats> _municipalityStats = {};
+
   String? _selectedDisease;
+  LatLngBounds? _provinceBoundaryBounds;
+
   static const String _filterBoxName = 'diseaseMapFilterBox';
   static const String _filterKeySelectedDisease = 'selectedDisease';
 
-  // Use model label keys for filtering/colors (exclude healthy/unknown).
+  bool _isBoundaryLoading = true;
+  bool _isReportLoading = true;
+  bool _isMapReady = false;
+  bool _hasAppliedInitialCamera = false;
+
   final List<String> _diseaseKeys = const [
     'swine_pox',
     'infected_bacterial_erysipelas',
@@ -33,6 +48,19 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     'infected_parasitic_mange',
     'infected_viral_foot_and_mouth',
   ];
+
+  static final LatLngBounds _davaoDelNorteBounds = LatLngBounds(
+    const LatLng(6.95, 125.45),
+    const LatLng(7.75, 126.05),
+  );
+
+  bool get _isLoading => _isBoundaryLoading || _isReportLoading;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeFilterAndLoad();
+  }
 
   String _canonicalDiseaseKey(String raw) {
     final k = PigDiseaseUI.normalizeKey(raw);
@@ -70,21 +98,6 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     }
   }
 
-  bool _isLoading = true;
-
-  // Davao del Norte (approx bounds). Used to force the map to start focused on the province.
-  // You can tighten/adjust these bounds anytime if you want a closer initial view.
-  static final LatLngBounds _davaoDelNorteBounds = LatLngBounds(
-    const LatLng(6.95, 125.45), // SW
-    const LatLng(7.75, 126.05), // NE
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeFilterAndLoad();
-  }
-
   Future<void> _initializeFilterAndLoad() async {
     try {
       final box = await Hive.openBox(_filterBoxName);
@@ -93,13 +106,18 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
       if (savedKey != null && _diseaseKeys.contains(savedKey)) {
         _selectedDisease = savedKey;
       } else {
-        _selectedDisease = null; // "Select disease" default
+        _selectedDisease = null;
       }
     } catch (_) {
       _selectedDisease = null;
     }
+
     if (!mounted) return;
-    _loadDiseaseLocations();
+
+    await Future.wait<void>([
+      _loadProvinceBoundaries(),
+      _loadDiseaseLocations(),
+    ]);
   }
 
   Future<void> _saveSelectedDiseaseFilter(String? value) async {
@@ -113,61 +131,134 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     } catch (_) {}
   }
 
-  Future<void> _loadDiseaseLocations() async {
-    if (_selectedDisease == null) {
+  Future<void> _loadProvinceBoundaries() async {
+    try {
+      final geoJsonString = await rootBundle.loadString('assets/DDN.geojson');
+      final decoded = jsonDecode(geoJsonString) as Map<String, dynamic>;
+      final rawFeatures = decoded['features'] as List<dynamic>? ?? const [];
+
+      final municipalityFeatures = <_GeoMunicipalityFeature>[];
+      final allPoints = <LatLng>[];
+
+      for (final rawFeature in rawFeatures) {
+        if (rawFeature is! Map) continue;
+
+        final feature = Map<String, dynamic>.from(rawFeature);
+        final properties =
+            feature['properties'] is Map
+                ? Map<String, dynamic>.from(feature['properties'] as Map)
+                : const <String, dynamic>{};
+
+        final municipalityName =
+            (properties['MUNICIPALI'] ??
+                    properties['municipality'] ??
+                    properties['name'] ??
+                    '')
+                .toString()
+                .trim();
+
+        if (municipalityName.isEmpty) continue;
+
+        final shapes = _parseGeoJsonGeometry(feature['geometry']);
+        if (shapes.isEmpty) continue;
+
+        for (final shape in shapes) {
+          allPoints.addAll(shape.points);
+          for (final hole in shape.holes) {
+            allPoints.addAll(hole);
+          }
+        }
+
+        municipalityFeatures.add(
+          _GeoMunicipalityFeature(
+            normalizedName: _normalizeMunicipalityName(municipalityName),
+            shapes: shapes,
+          ),
+        );
+      }
+
+      final renderedPolygons = _buildMunicipalityPolygons(
+        municipalityFeatures,
+        _municipalityStats,
+      );
+      final outsideMaskPolygons = _buildOutsideMaskPolygons(
+        municipalityFeatures,
+      );
+
       if (!mounted) return;
       setState(() {
-        _isLoading = false;
+        _municipalityFeatures = municipalityFeatures;
+        _municipalityPolygons = renderedPolygons;
+        _outsideMaskPolygons = outsideMaskPolygons;
+        _provinceBoundaryBounds =
+            allPoints.isEmpty ? null : LatLngBounds.fromPoints(allPoints);
+        _isBoundaryLoading = false;
+      });
+      _fitMapToProvinceIfReady();
+    } catch (e) {
+      debugPrint('Error loading Davao del Norte GeoJSON: $e');
+      if (!mounted) return;
+      setState(() {
+        _isBoundaryLoading = false;
+      });
+      _fitMapToProvinceIfReady();
+    }
+  }
+
+  Future<void> _loadDiseaseLocations() async {
+    if (mounted) {
+      setState(() {
+        _isReportLoading = true;
+      });
+    }
+
+    if (_selectedDisease == null) {
+      final renderedPolygons = _buildMunicipalityPolygons(
+        _municipalityFeatures,
+        const <String, _MunicipalityHeatStats>{},
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _municipalityStats = {};
+        _municipalityPolygons = renderedPolygons;
         _heatmapCircles = [];
         _invisibleMarkers = [];
+        _isReportLoading = false;
       });
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
-
     try {
-      // Load ONLY completed reports (validated by expert).
       final snapshot =
           await FirebaseFirestore.instance
               .collection('scan_requests')
               .where('status', isEqualTo: 'completed')
               .get();
 
-      print(
-        '🔍 Disease Map: Found ${snapshot.docs.length} documents with status="completed"',
-      );
-
-      // Aggregate by City (focus area).
-      // One marker per city for selected disease, with size based on case count.
       final Map<String, _BarangayAgg> agg = {};
-      int totalBackgroundReports = 0; // Includes healthy + diseased reports.
+      int totalBackgroundReports = 0;
       final geocoder = GeocodingService();
       final Map<String, Map<String, dynamic>?> userCache = {};
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
-
-        // Only condition: status must be exactly 'completed'.
         final status = (data['status'] ?? '').toString();
         if (status != 'completed') continue;
 
-        // Use expertDiseaseSummary when present, otherwise fall back to model diseaseSummary.
         final rawSummary =
             (data['expertDiseaseSummary'] as List?) ??
             (data['diseaseSummary'] as List?) ??
             const [];
 
-        final List<Map<String, dynamic>> cleaned = [];
+        final cleaned = <Map<String, dynamic>>[];
         for (final e in rawSummary) {
           if (e is Map) cleaned.add(Map<String, dynamic>.from(e));
         }
+
         final userId = (data['userId'] ?? '').toString();
         if (userId.trim().isEmpty) continue;
 
-        // Prefer address fields copied onto scan_requests; fall back to user profile.
         String province = (data['province'] ?? '').toString();
         String city = (data['cityMunicipality'] ?? '').toString();
         String barangay = (data['barangay'] ?? '').toString();
@@ -180,50 +271,46 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
             barangay.trim().isEmpty ||
             lat == null ||
             lng == null) {
-          // Fetch user doc once per userId (cached) for older reports.
-          Map<String, dynamic>? u = userCache[userId];
-          if (u == null && !userCache.containsKey(userId)) {
+          Map<String, dynamic>? userData = userCache[userId];
+          if (userData == null && !userCache.containsKey(userId)) {
             try {
               final userDoc =
                   await FirebaseFirestore.instance
                       .collection('users')
                       .doc(userId)
                       .get();
-              u = userDoc.data();
+              userData = userDoc.data();
             } catch (_) {
-              u = null;
+              userData = null;
             }
-            userCache[userId] = u;
+            userCache[userId] = userData;
           } else {
-            u = userCache[userId];
+            userData = userCache[userId];
           }
 
-          if (u != null) {
+          if (userData != null) {
             province =
                 province.trim().isEmpty
-                    ? (u['province'] ?? '').toString()
+                    ? (userData['province'] ?? '').toString()
                     : province;
             city =
                 city.trim().isEmpty
-                    ? (u['cityMunicipality'] ?? '').toString()
+                    ? (userData['cityMunicipality'] ?? '').toString()
                     : city;
             barangay =
                 barangay.trim().isEmpty
-                    ? (u['barangay'] ?? '').toString()
+                    ? (userData['barangay'] ?? '').toString()
                     : barangay;
-            lat ??= (u['latitude'] as num?)?.toDouble();
-            lng ??= (u['longitude'] as num?)?.toDouble();
+            lat ??= (userData['latitude'] as num?)?.toDouble();
+            lng ??= (userData['longitude'] as num?)?.toDouble();
           }
         }
 
         if (barangay.trim().isEmpty && city.trim().isEmpty) continue;
 
-        // Count every completed report in the denominator (including healthy),
-        // to compute real disease distribution percentages.
         totalBackgroundReports++;
 
-        // Collect selected/real disease labels only for numerator aggregation.
-        final Set<String> diseaseKeysInReport =
+        final diseaseKeysInReport =
             cleaned
                 .map(
                   (e) => _canonicalDiseaseKey(
@@ -232,57 +319,86 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                 )
                 .where((k) => _diseaseKeys.contains(k))
                 .toSet();
-        // Skip reports that do not match the selected disease.
+
         if (!diseaseKeysInReport.contains(_selectedDisease)) continue;
 
-        // Group by CITY + PROVINCE (not barangay) so each city has one pin.
-        final key = '${city.toLowerCase()}|${province.toLowerCase()}';
+        final key =
+            '${barangay.toLowerCase()}|${city.toLowerCase()}|${province.toLowerCase()}';
         agg.putIfAbsent(
           key,
           () => _BarangayAgg(
             province: province,
             city: city,
-            // Keep first barangay seen for this city for informational text.
             barangay: barangay,
           ),
         );
         agg[key]!.count++;
+        if (lat != null && lng != null) {
+          agg[key]!.sumLat += lat;
+          agg[key]!.sumLng += lng;
+          agg[key]!.coordinateSamples++;
+        }
         for (final diseaseKey in diseaseKeysInReport) {
           agg[key]!.diseaseCounts[diseaseKey] =
               (agg[key]!.diseaseCounts[diseaseKey] ?? 0) + 1;
         }
       }
 
-      // Geocode CITY centroid (best-effort, cached) so heatmap circles sit at city center,
-      // independent of individual farmer lat/lng.
       for (final a in agg.values) {
+        if (a.coordinateSamples > 0) {
+          a.lat = a.sumLat / a.coordinateSamples;
+          a.lng = a.sumLng / a.coordinateSamples;
+          continue;
+        }
+
         if (a.province.trim().isEmpty || a.city.trim().isEmpty) continue;
-        final geo = await geocoder.geocodeCity(
+
+        if (a.barangay.trim().isNotEmpty) {
+          final geo = await geocoder.geocode(
+            barangay: a.barangay,
+            cityMunicipality: a.city,
+            province: a.province,
+          );
+          if (geo != null) {
+            a.lat = geo['lat'];
+            a.lng = geo['lng'];
+            continue;
+          }
+        }
+
+        final cityGeo = await geocoder.geocodeCity(
           cityMunicipality: a.city,
           province: a.province,
         );
-        if (geo != null) {
-          a.lat = geo['lat'];
-          a.lng = geo['lng'];
+        if (cityGeo != null) {
+          a.lat = cityGeo['lat'];
+          a.lng = cityGeo['lng'];
         }
       }
 
-      // Create heatmap circles with gradient layers
       final heatmapCircles = <CircleMarker>[];
-      final invisibleMarkers = <Marker>[]; // For click interaction
+      final invisibleMarkers = <Marker>[];
+      final municipalityStats = <String, _MunicipalityHeatStats>{};
 
-      // Numerator is selected disease count per city; denominator includes
-      // all completed reports (healthy + diseased) for real distribution.
       final totalCases = totalBackgroundReports;
       for (final a in agg.values) {
         if (a.lat == null || a.lng == null) continue;
+
         final count = a.count;
         if (count <= 0) continue;
 
-        // Raw share in current filtered set (for display).
         final percentage = totalCases > 0 ? (count / totalCases * 100) : 0.0;
 
-        // Radius follows raw percentage with the same threshold bands.
+        final municipalityKey = _normalizeMunicipalityName(a.city);
+        final previousMunicipalityStats = municipalityStats[municipalityKey];
+        if (previousMunicipalityStats == null ||
+            percentage > previousMunicipalityStats.percentage) {
+          municipalityStats[municipalityKey] = _MunicipalityHeatStats(
+            count: count,
+            percentage: percentage,
+          );
+        }
+
         double radius;
         if (percentage <= 10) {
           radius = 500.0 + ((percentage / 10.0) * 1000.0);
@@ -293,20 +409,14 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
           radius = 3000.0 + (math.min(excess / 70.0, 1.0) * 2000.0);
         }
 
-        // Use percentage-threshold color directly to avoid any mismatch.
         final heatmapColor = _getHeatmapColorByPercentage(percentage);
 
-        // Create smooth gradient heatmap effect using multiple overlapping circles
-        // This simulates Kernel Density Estimation (KDE) for a smooth gradient
-        const int numLayers = 5; // Layers for smoother gradient
+        const numLayers = 5;
         for (int i = 0; i < numLayers; i++) {
-          // Each layer extends further with decreasing opacity
           final layerRadius = radius * (1.0 + (i * 0.2));
-          // Opacity decreases exponentially for smooth falloff
           final layerOpacity = 0.6 * math.exp(-i * 0.4);
 
           if (layerRadius > 50 && layerOpacity > 0.05) {
-            // Add gradient layers (semi-transparent for blending)
             heatmapCircles.add(
               CircleMarker(
                 point: LatLng(a.lat!, a.lng!),
@@ -320,20 +430,17 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
           }
         }
 
-        // Add a solid center circle for the core intensity point
-        // This creates the "hotspot" effect with white outline
         heatmapCircles.add(
           CircleMarker(
             point: LatLng(a.lat!, a.lng!),
-            radius: radius * 0.15, // Smaller solid center
-            color: heatmapColor, // Solid color (no opacity)
-            borderColor: Colors.white.withOpacity(0.9), // White outline
-            borderStrokeWidth: 2.0, // Visible outline
+            radius: radius * 0.15,
+            color: heatmapColor,
+            borderColor: Colors.white.withOpacity(0.9),
+            borderStrokeWidth: 2.0,
             useRadiusInMeter: true,
           ),
         );
 
-        // Create invisible marker for click interaction
         invisibleMarkers.add(
           Marker(
             point: LatLng(a.lat!, a.lng!),
@@ -360,18 +467,24 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
         );
       }
 
-      print(
-        '✅ Disease Map: Created ${heatmapCircles.length} heatmap circles from validated reports',
+      final renderedPolygons = _buildMunicipalityPolygons(
+        _municipalityFeatures,
+        municipalityStats,
       );
+
+      if (!mounted) return;
       setState(() {
+        _municipalityStats = municipalityStats;
+        _municipalityPolygons = renderedPolygons;
         _heatmapCircles = heatmapCircles;
         _invisibleMarkers = invisibleMarkers;
-        _isLoading = false;
+        _isReportLoading = false;
       });
     } catch (e) {
-      print('❌ Error loading disease locations: $e');
+      debugPrint('Error loading disease locations: $e');
+      if (!mounted) return;
       setState(() {
-        _isLoading = false;
+        _isReportLoading = false;
       });
     }
   }
@@ -404,9 +517,19 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                   style: TextStyle(fontSize: 13, color: Colors.black54),
                 ),
                 Text(
-                  '$barangay, $city, $province',
+                  '$city, $province',
                   style: const TextStyle(fontSize: 16),
                 ),
+                if (barangay.trim().isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Barangay reference: $barangay',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 Row(
                   children: [
@@ -512,11 +635,185 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
     );
   }
 
-  /// Strict 3-band heatmap colors from raw percentage:
-  /// Low (<=10) -> Green, Medium (<=30) -> Orange, High (>30) -> Red.
   Color _getHeatmapColorByPercentage(double percentage) {
     final severity = _getSeverityLabel(percentage);
     return _severityColor(severity);
+  }
+
+  List<_GeoPolygonShape> _parseGeoJsonGeometry(dynamic rawGeometry) {
+    if (rawGeometry is! Map) return [];
+
+    final geometry = Map<String, dynamic>.from(rawGeometry);
+    final type = (geometry['type'] ?? '').toString();
+    final coordinates = geometry['coordinates'];
+
+    switch (type) {
+      case 'Polygon':
+        return _parsePolygonCoordinates(coordinates);
+      case 'MultiPolygon':
+        final polygons = <_GeoPolygonShape>[];
+        if (coordinates is List) {
+          for (final polygonCoordinates in coordinates) {
+            polygons.addAll(_parsePolygonCoordinates(polygonCoordinates));
+          }
+        }
+        return polygons;
+      default:
+        return [];
+    }
+  }
+
+  List<_GeoPolygonShape> _parsePolygonCoordinates(dynamic rawCoordinates) {
+    if (rawCoordinates is! List || rawCoordinates.isEmpty) return [];
+
+    final rings = <List<LatLng>>[];
+    for (final rawRing in rawCoordinates) {
+      if (rawRing is! List) continue;
+
+      final points = <LatLng>[];
+      for (final rawPoint in rawRing) {
+        if (rawPoint is! List || rawPoint.length < 2) continue;
+
+        final lng = (rawPoint[0] as num?)?.toDouble();
+        final lat = (rawPoint[1] as num?)?.toDouble();
+        if (lat == null || lng == null) continue;
+
+        points.add(LatLng(lat, lng));
+      }
+
+      if (points.length < 3) continue;
+
+      final first = points.first;
+      final last = points.last;
+      if (first.latitude == last.latitude &&
+          first.longitude == last.longitude) {
+        points.removeLast();
+      }
+
+      if (points.length >= 3) {
+        rings.add(points);
+      }
+    }
+
+    if (rings.isEmpty) return [];
+
+    return [
+      _GeoPolygonShape(
+        points: rings.first,
+        holes: rings.length > 1 ? rings.sublist(1) : const [],
+      ),
+    ];
+  }
+
+  List<Polygon> _buildMunicipalityPolygons(
+    List<_GeoMunicipalityFeature> municipalityFeatures,
+    Map<String, _MunicipalityHeatStats> municipalityStats,
+  ) {
+    final polygons = <Polygon>[];
+
+    for (final feature in municipalityFeatures) {
+      final stats = municipalityStats[feature.normalizedName];
+      final fillColor = _getMunicipalityFillColor(stats);
+
+      for (final shape in feature.shapes) {
+        polygons.add(
+          Polygon(
+            points: shape.points,
+            holePointsList: shape.holes.isEmpty ? null : shape.holes,
+            color: fillColor,
+            borderColor: Colors.black.withOpacity(0.82),
+            borderStrokeWidth: 1.15,
+            isFilled: true,
+          ),
+        );
+      }
+    }
+
+    return polygons;
+  }
+
+  List<Polygon> _buildOutsideMaskPolygons(
+    List<_GeoMunicipalityFeature> municipalityFeatures,
+  ) {
+    final holes = <List<LatLng>>[];
+
+    for (final feature in municipalityFeatures) {
+      for (final shape in feature.shapes) {
+        holes.add(shape.points);
+      }
+    }
+
+    if (holes.isEmpty) return [];
+
+    return [
+      Polygon(
+        points: const [
+          LatLng(-85, -180),
+          LatLng(-85, 180),
+          LatLng(85, 180),
+          LatLng(85, -180),
+        ],
+        holePointsList: holes,
+        color: Colors.white.withOpacity(0.84),
+        borderColor: Colors.transparent,
+        borderStrokeWidth: 0,
+        disableHolesBorder: true,
+        isFilled: true,
+      ),
+    ];
+  }
+
+  Color _getMunicipalityFillColor(_MunicipalityHeatStats? stats) {
+    if (_selectedDisease == null) {
+      return Colors.white.withOpacity(0.32);
+    }
+
+    if (stats == null || stats.count == 0) {
+      return Colors.white.withOpacity(0.30);
+    }
+
+    final softened = Color.lerp(
+      Colors.white,
+      _getHeatmapColorByPercentage(stats.percentage),
+      0.32,
+    )!;
+
+    double opacity;
+    if (stats.percentage > 30) {
+      opacity = 0.22;
+    } else if (stats.percentage > 10) {
+      opacity = 0.16;
+    } else {
+      opacity = 0.10 + (math.min(stats.percentage, 10) / 10 * 0.05);
+    }
+
+    return softened.withOpacity(opacity);
+  }
+
+  String _normalizeMunicipalityName(String raw) {
+    var normalized = raw.toLowerCase().trim();
+    normalized = normalized.replaceAll('&', ' and ');
+    normalized = normalized.replaceAll(
+      RegExp(r'\bisland garden city of\b'),
+      'island garden',
+    );
+    normalized = normalized.replaceAll(RegExp(r'\bcity of\b'), '');
+    normalized = normalized.replaceAll(RegExp(r'\bcity\b'), '');
+    normalized = normalized.replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
+    return normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  void _fitMapToProvinceIfReady() {
+    if (!_isMapReady || _hasAppliedInitialCamera || _isBoundaryLoading) return;
+
+    final bounds = _provinceBoundaryBounds ?? _davaoDelNorteBounds;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isMapReady || _hasAppliedInitialCamera) return;
+      _mapController.fitCamera(
+        CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(28)),
+      );
+      _hasAppliedInitialCamera = true;
+    });
   }
 
   @override
@@ -527,15 +824,12 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
               ? const Center(child: CircularProgressIndicator())
               : Column(
                 children: [
-                  // Legend and disease selector
                   Container(
                     padding: const EdgeInsets.all(16),
                     color: Colors.white,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Legend (non-confusing):
-                        // Pin color = severity (low/medium/high)
                         Row(
                           children: [
                             Expanded(
@@ -556,7 +850,7 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                           children: [
                             Expanded(
                               child: Text(
-                                'Heatmap intensity = Number of completed reports • Thresholds: Low (10% below) | Medium (11% to 30%) | High (31% and above)',
+                                'Municipality shading = share of completed reports. Black outlines = Davao del Norte GeoJSON borders. Thresholds: Low (10% and below) | Medium (11% to 30%) | High (31% and above)',
                                 style: TextStyle(
                                   color: Colors.grey[700],
                                   fontSize: 12,
@@ -572,7 +866,6 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        // Disease selector
                         const Text(
                           'Filter by Disease Type',
                           style: TextStyle(
@@ -616,25 +909,17 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                       ],
                     ),
                   ),
-                  // Map
                   Expanded(
                     child: FlutterMap(
                       mapController: _mapController,
                       options: MapOptions(
-                        // Ensure tiles render immediately without requiring a manual drag.
-                        initialCenter: _davaoDelNorteBounds.center,
+                        initialCenter:
+                            _provinceBoundaryBounds?.center ??
+                            _davaoDelNorteBounds.center,
                         initialZoom: 9.0,
                         onMapReady: () {
-                          // Force zoom to Davao del Norte province on open.
-                          // Delay one microtask to ensure the map has a size before fitting.
-                          Future.microtask(() {
-                            _mapController.fitCamera(
-                              CameraFit.bounds(
-                                bounds: _davaoDelNorteBounds,
-                                padding: const EdgeInsets.all(32),
-                              ),
-                            );
-                          });
+                          _isMapReady = true;
+                          _fitMapToProvinceIfReady();
                         },
                         minZoom: 5.0,
                         maxZoom: 18.0,
@@ -645,7 +930,12 @@ class _DiseaseMapPageState extends State<DiseaseMapPage> {
                               'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                           userAgentPackageName: 'com.example.capstone',
                         ),
-                        CircleLayer(circles: _heatmapCircles),
+                        if (_outsideMaskPolygons.isNotEmpty)
+                          PolygonLayer(polygons: _outsideMaskPolygons),
+                        if (_municipalityPolygons.isNotEmpty)
+                          PolygonLayer(polygons: _municipalityPolygons),
+                        if (_heatmapCircles.isNotEmpty)
+                          CircleLayer(circles: _heatmapCircles),
                         MarkerLayer(markers: _invisibleMarkers),
                       ],
                     ),
@@ -687,4 +977,34 @@ class _BarangayAgg {
   int count = 0;
   double? lat;
   double? lng;
+  double sumLat = 0;
+  double sumLng = 0;
+  int coordinateSamples = 0;
+}
+
+class _MunicipalityHeatStats {
+  const _MunicipalityHeatStats({
+    required this.count,
+    required this.percentage,
+  });
+
+  final int count;
+  final double percentage;
+}
+
+class _GeoMunicipalityFeature {
+  const _GeoMunicipalityFeature({
+    required this.normalizedName,
+    required this.shapes,
+  });
+
+  final String normalizedName;
+  final List<_GeoPolygonShape> shapes;
+}
+
+class _GeoPolygonShape {
+  const _GeoPolygonShape({required this.points, required this.holes});
+
+  final List<LatLng> points;
+  final List<List<LatLng>> holes;
 }
